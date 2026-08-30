@@ -9,7 +9,6 @@ from typing import List, Dict, Tuple
 from openai import OpenAI
 import requests
 
-# ===================== 配置 =====================
 OPENAI_API_KEY = ""  # GPT-4 API Key
 QWEN_API_KEY = ""
 ZHIPU_API_KEY = ""
@@ -23,10 +22,8 @@ P_NUM_VARIANTS = 5        # 提示扰动次数
 TAU_LOW = 0.2
 TAU_HIGH = 0.8
 
-# 目标模型选择（消融实验用 Kimi，表现最好）
 TARGET_MODEL_NAME = "kimi"  
 
-# 数据集路径（请根据您的实际数据位置调整）
 DATA_DIR = Path(r"C:\Users\liuxi\Desktop\streambench\data\toolbench\test-00000-of-00001 (1).parquet")
 SPLIT = "train"
 # GPT-4 Judge
@@ -185,7 +182,7 @@ def load_data(limit=500):
         data.append({"question": str(row["question"]), "answer": str(row["SQL"])})
     return data[:limit]
 
-# ===================== 消融实验 =====================
+# 消融实验 
 def run_ablation(config: str, data_subset: List[Dict]) -> Tuple[float, float]:
     """
     config: 'full', 'no_ner', 'no_msupsk', 'no_routing'
@@ -261,7 +258,7 @@ def run_ablation(config: str, data_subset: List[Dict]) -> Tuple[float, float]:
 
 
 
-# ===================== 分析实验 =====================
+# 分析实验
 def dialogue_rounds_analysis(data_subset):
     """模拟不同对话轮数的效果（由于真实多轮成本高，这里用模拟）"""
     rounds = [0, 1, 2, 3]
