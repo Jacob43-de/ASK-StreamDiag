@@ -1,4 +1,4 @@
-API_KEY_GEMINI = "AQ.Ab8RN6JkRkhU9em58zALE-Qer5If1w0wHBRlvIHclXO4PLmfGg"
+API_KEY_GEMINI = ""
 FEW_SHOT_NUM = 3                # 少样本示例数量
 RUN_COUNT = 1000                # 运行前1000条数据
 
