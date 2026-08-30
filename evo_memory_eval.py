@@ -9,8 +9,8 @@ from openai import OpenAI
 from typing import Dict, List, Tuple
 from sklearn.metrics import f1_score, matthews_corrcoef
 
-API_KEY_QWEN = "sk-5a94d3c219a34ca3bccb3cd8ddeba635"
-API_KEY_ZHIPU = "2059308a2b184f0ab74f251481a7eb76.aoUQ71oedYHTX4hj"
+API_KEY_QWEN = ""
+API_KEY_ZHIPU = ""
 MAX_MEMORY = 16                # 记忆库最大容量
 MEMORY_RETRIEVAL_TOPK = 3      # 每次检索最相似的记忆数量
 
@@ -36,7 +36,7 @@ DATA_CONFIG = {
 }
 
 client_moonshot = OpenAI(
-    api_key="sk-qYmUO15MCJ8hDB7LeAoIYxEKsrCCWzgjGnp4Dq3CEDoIh78a",
+    api_key="",
     base_url="https://api.moonshot.cn/v1",
 )
 
@@ -81,7 +81,7 @@ def call_zhipu(prompt: str) -> str:
 
 def call_doubao(prompt: str) -> str:
     try:
-        api_key_doubao = os.getenv('ark-c73d57b8-cbf1-4083-9b6e-05953b7b5574-18a7e')
+        api_key_doubao = os.getenv('')
         client = OpenAI(base_url="https://ark.cn-beijing.volces.com/api/v3", api_key=api_key_doubao)
         response = client.responses.create(
             model="doubao-seed-2-0-lite-260215",
