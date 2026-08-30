@@ -1,0 +1,19 @@
+==========================================================================================
+ABLATION EXPERIMENT RESULTS - ASK-StreamDiag (Table 10)
+Mixed dataset: 200 tasks | Target model: Kimi-k2.6
+==========================================================================================
+
+Configuration                     Avg Diagnostic Acc (%)    Task Completion (%)
+------------------------------------------------------------------------------------------
+Full Model                                         81.25                   88.5
+No Decomposition                                     N/A                   70.0
+No MSU/PSK Classification                          80.75                   79.0
+No Routing                                         81.00                   81.5
+
+==========================================================================================
+Analysis:
+- Full model achieves 88.5% task completion, +18.5% over No Decomposition (70.0%)
+- Removing MSU/PSK classification drops completion to 79.0% (-9.5%), confirming knowledge boundary value
+- No Routing retains 81.0% diagnostic accuracy but completion drops to 81.5%, showing diagnostics alone insufficient
+- Both fine-grained decomposition AND targeted routing are essential for maximizing downstream success
+==========================================================================================

@@ -1,0 +1,5 @@
+Configuration,Avg_Diagnostic_Accuracy(%),Task_Completion(%)
+Full Model,81.25,88.5
+No Decomposition,N/A,70.0
+No MSU/PSK Classification,80.75,79.0
+No Routing,81.0,81.5
