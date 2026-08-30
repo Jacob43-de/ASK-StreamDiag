@@ -1,5 +1,5 @@
-API_KEY_QWEN = "sk-5a94d3c219a34ca3bccb3cd8ddeba635"
-API_KEY_ZHIPU = "2059308a2b184f0ab74f251481a7eb76.aoUQ71oedYHTX4hj"
+API_KEY_QWEN = ""
+API_KEY_ZHIPU = ""
 RUN_COUNT = 1000                # 运行前1000条数据
 GROW_WINDOW_SIZE = 16           # GrowPrompt 滑动窗口大小（论文默认k=16）
 
@@ -14,7 +14,7 @@ import numpy as np
 from sklearn.metrics import f1_score, matthews_corrcoef
 
 client = OpenAI(
-    api_key="sk-qYmUO15MCJ8hDB7LeAoIYxEKsrCCWzgjGnp4Dq3CEDoIh78a",
+    api_key="",
     base_url="https://api.moonshot.cn/v1",
 )
 def kimi(prompt):
@@ -28,7 +28,7 @@ def kimi(prompt):
     except:
         return ""
 
-api_key_doubao = os.getenv('ark-c73d57b8-cbf1-4083-9b6e-05953b7b5574-18a7e')
+api_key_doubao = os.getenv('')
 client_doubao = OpenAI(
     base_url="https://ark.cn-beijing.volces.com/api/v3",
     api_key=api_key_doubao,
@@ -142,7 +142,7 @@ def load_parquet_data(dataset_name, split, field_map, limit=RUN_COUNT):
 stream_data = load_parquet_data(DATASET_NAME, SPLIT, FIELD_MAP)
 print(f"成功加载 {len(stream_data)} 条数据\n")
 
-# ===================== GrowPrompt=====================
+#GrowPrompt
 grow_window = []  # 存储 (question, pred_sql, is_correct)
 
 all_preds = []
