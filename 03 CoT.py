@@ -1,5 +1,5 @@
-API_KEY_QWEN = "sk-5a94d3c219a34ca3bccb3cd8ddeba635"
-API_KEY_ZHIPU = "2059308a2b184f0ab74f251481a7eb76.aoUQ71oedYHTX4hj"
+API_KEY_QWEN = ""
+API_KEY_ZHIPU = ""
 RUN_COUNT = 1000                # 运行前1000条数据
 
 import requests
@@ -13,7 +13,7 @@ import numpy as np
 from sklearn.metrics import f1_score, matthews_corrcoef
 
 client = OpenAI(
-    api_key="sk-qYmUO15MCJ8hDB7LeAoIYxEKsrCCWzgjGnp4Dq3CEDoIh78a",
+    api_key="",
     base_url="https://api.moonshot.cn/v1",
 )
 
@@ -28,7 +28,7 @@ def kimi(prompt):
     except:
         return ""
 
-api_key_doubao = os.getenv('ark-c73d57b8-cbf1-4083-9b6e-05953b7b5574-18a7e')
+api_key_doubao = os.getenv('')
 client_doubao = OpenAI(
     base_url="https://ark.cn-beijing.volces.com/api/v3",
     api_key=api_key_doubao,
