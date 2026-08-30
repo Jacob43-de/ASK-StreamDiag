@@ -1,0 +1,2396 @@
+﻿Total pages: 46
+=== PAGE 1 ===
+Received:
+Revised:
+Accepted:
+Published:
+Copyright:© 2026 by the authors.
+Submitted to Journal Not Specified for
+possible open access publication under
+the terms and conditions of the
+Creative Commons Attribution
+(CC BY) license.
+Article
+ASK-StreamDiag: Fine-Grained Streaming Failure Diagnosis for
+LLMs via Atomic Subtasks and Prompt-Perturbation Knowledge
+Boundaries
+Liu Xiangyue
+1Affiliation 1; e-mail@e-mail.com
+2Affiliation 2; e-mail@e-mail.com
+*Correspondence: e-mail@e-mail.com; Tel.: (optional; include country code; if there are multiple
+corresponding authors, add author initials) +xx-xxxx-xxx-xxxx (F.L.)
+Abstract 1
+Standard streaming LLM evaluation only outputs binary pass/fail feedback, which cannot 2
+pinpoint which intermediate reasoning step causes model failure, nor distinguish failures3
+caused by permanent capability gaps versus prompt activation instability. To resolve this 4
+limitation, we introduce ASK-StreamDiag, a fine-grained streaming evaluation framework 5
+built on atomic subtask decomposition and standardized prompt perturbation-based knowl- 6
+edge boundary classification. Our pipeline first splits complex code, medical diagnosis 7
+and tool-use tasks into domain-specific atomic subtasks, then employs a strong judge LLM 8
+to generate structured per-subtask failure records. We further categorize each failed sub- 9
+task into MSU-like (unrecoverable across prompt variants) or PSK-like (prompt-sensitive)10
+failure types via a fixed set of 3-4 prompt perturbation templates. We validate our frame- 11
+work on three public benchmarks (DS-1000, DDXPlus, ToolBench) with human-annotated 12
+gold failure labels to calibrate diagnostic accuracy. Controlled budget-matched baseline 13
+experiments confirm that the fine-grained subtask diagnosis module, rather than stronger 14
+external LLM models, drives improved post-failure recovery performance. Ablation, hy- 15
+perparameter sensitivity and cross-domain generalization analyses verify the robustness of 16
+our subtask decomposition and MSU/PSK classification modules. Finally, we demonstrate 17
+that MSU/PSK-aware adaptive prompt rewriting and model routing achieve a balanced 18
+tradeoff between inference cost and task completion rate under streaming deployment 19
+scenarios. We release annotated fine-grained failure diagnostic samples to support future 20
+LLM evaluation research. 21
+Keywords:large language model evaluation; streaming evaluation; fine-grained analysis;22
+knowledge boundary; multi-agent routing 23
+1. Introduction 24
+Paradigms for large language model (LLM) evaluation are undergoing a critical transi- 25
+tion, shifting from benchmarking what LLMs are empirically capable of accomplishing to26
+dissecting the root causes underlying their success and failure modes. While conventional 27
+static benchmarks quantify the inherent competence of LLMs effectively, they only deliver 28
+binary right/wrong annotations and fail to unpack the intrinsic drivers responsible for erro- 29
+neous model outputs [ 1,2]. In parallel, dynamic streaming evaluation pipelines exemplified 30
+by StreamBench enable continuous performance tracking with iterative user feedback, yet 31
+they are plagued by coarse evaluation granularity. Under such coarse-grained protocols, 32
+Version August 11, 2026 submitted to Journal Not Specified https://doi.org/10.3390/1010000
+
+=== PAGE 2 ===
+Version August 11, 2026 submitted to Journal Not Specified2 of 46
+practitioners can merely identify task failure outcomes without pinpointing the precise trig- 33
+gers behind unsatisfactory model behaviors [ 3,4]. Driven by this research gap, the present 34
+work develops a fine-grained process-aware analytical framework tailored to streaming 35
+evaluation settings. Leveraging domain-specific prior knowledge, the proposed framework 36
+partitions intricate holistic tasks into irreducible atomic subtasks. A robust referee LLM 37
+is deployed to conduct independent performance auditing for each decomposed subtask, 38
+followed by failure taxonomy categorization grounded in the knowledge boundary theory 39
+(MSU versus PSK). Ultimately, this pipeline yields an interpretable, visualizable capability 40
+spectrum for target models. 41
+A tangible case derived from the DS-1000 Python code generation benchmark fur- 42
+ther elaborates this methodological defect [ 5]. Consider a query requesting a dynamic 43
+programming-based function for Fibonacci sequence computation; the corresponding 44
+model-generated code fails unit testing protocols. Traditional evaluation workflows can 45
+only flag this instance as a generic failed case. Nevertheless, this single binary label masks 46
+a broad spectrum of underlying fault origins: the model may misinterpret core algorithmic 47
+constraints (e.g., adopting recursive implementation instead of dynamic programming 48
+paradigms); logical flaws may emerge in control flow design such as inappropriate loop 49
+boundaries or invalid recursive base cases; variable assignment and data structure ma- 50
+nipulation may contain operational mistakes; or the generated code may simply violate 51
+Python syntactic specifications. Legacy evaluation protocols cannot differentiate these 52
+distinct failure sources, treating LLMs as opaque black-box systems that exclusively output 53
+dichotomous pass/fail signals. A more counterintuitive observation lies in inconsistent 54
+cross-instance performance: an LLM may solve one highly analogous query flawlessly 55
+while collapsing entirely on a near-identical counterpart. Such volatile behavior rarely 56
+points to critical knowledge deficits but instead reflects prompt susceptibility—relevant 57
+knowledge is internally encoded within model parameters yet cannot be properly acti- 58
+vated by specific prompt formulations. As Yin et al. argued, assessments relying on fixed 59
+question sets or limited rephrasing variants lack robustness and comprehensiveness, given 60
+LLMs’ extreme sensitivity toward prompt lexical and structural design [ 6]. To resolve 61
+this drawback, the authors formalized the knowledge boundary construct to differentiate 62
+prompt-agnostic knowledge and prompt-dependent susceptible knowledge [6].63
+Deficiencies embedded within conventional evaluation paradigms have become in- 64
+creasingly conspicuous in recent literature. Static benchmarks represented by MMLU 65
+have long served as the de facto gold standard for LLM quantitative assessment, yet 66
+contemporary empirical evidence indicates that state-of-the-art LLMs attain over 90% ac- 67
+curacy on these testbeds, indicating prominent performance saturation effects [ 1]. More 68
+critically, Gema et al. performed a thorough error auditing on MMLU and uncovered 69
+pervasive ground-truth annotation flaws; for instance, 57% of examined entries within 70
+the Virology subset contained labeling inconsistencies [ 1]. These discoveries have trig- 71
+gered widespread skepticism across the community regarding the credibility of prevailing 72
+evaluation ecosystems, to the extent that several scholars proclaimed the obsolescence of 73
+the MMLU benchmark [ 6]. Banerjee et al. systematically diagnosed this methodological 74
+predicament, demonstrating that static benchmark design philosophies, human annotation 75
+protocols, and LLM-as-judge evaluation architectures all carry inherent drawbacks that 76
+collectively compromise the validity of modern performance quantification [ 2]. In their 77
+exhaustive survey covering LLM agent evaluation, Yehudai et al. documented an ongoing 78
+community-wide transition toward more realistic, challenging, and dynamically updatable 79
+benchmark suites that evolve synchronously with advancing model capacities [3].80
+Shifting evaluation focus from final task outcomes to intermediate execution proce- 81
+dures necessitates diagnostic tools capable of probing the internal inferential mechanics 82
+https://doi.org/10.3390/1010000
+
+=== PAGE 3 ===
+Version August 11, 2026 submitted to Journal Not Specified3 of 46
+of LLMs. A qualified diagnostic framework must address the following critical research 83
+questions: At which discrete subtask does erroneous inference originate? Are observed 84
+failures attributed to permanent knowledge absence (prompt-independent knowledge 85
+insufficiency) or blocked knowledge retrieval (prompt-sensitive activation failure)? How 86
+do different models exhibit heterogeneous strengths and weaknesses across task distribu- 87
+tions, and what quantitative patterns characterize their respective capability spectra? These 88
+interrogations constitute the core research motivation of our study.89
+To remedy the aforementioned limitations, we put forward a fine-grained process- 90
+aware analysis framework dedicated to streaming evaluation scenarios. The framework 91
+operates via a three-stage sequential pipeline, as visualized in Figure 1: Stage I (Task De- 92
+composition) dismantles complex end-to-end tasks into minimal atomic subtasks guided 93
+by domain expertise. Stage II (Diagnostic Assessment) employs a referee LLM to indepen- 94
+dently score target model outputs for each decomposed subtask, producing structured 95
+JSON-formatted feedback that records task success status and detailed error attribution. 96
+Stage III (Capability Profiling and Boundary Classification) aggregates cross-subtask diag- 97
+nostic results to construct quantitative capability profiles, and further allocates all failure 98
+cases into either the MSU or PSK category in accordance with the established knowledge 99
+boundary framework [6]. 100
+Fine-Grained Process-Aware Streaming Evaluation
+Judge LLM Analysis
+Capability ProfileAtomic Sub-tasks
+(replacing other LLMs)Capability PreflleFailure TableVisualizable
+Judge LLMComplex
+VisuallzableInput(PSS. Fall)TaskDynamic Streaming Evaluation (e.g. SireamBencb)
+Provide a correct dynamic programming
+implementation of Fibonacci in Python.recursive version but it's too slow and has aprogramming in Python. I attempted aImplement Fibonacci using dynamicStatic Python Evaluation
+(b) Text Input:
+(c) Question:(a) (Input)
+bug.+Input
+Img Text QuestionCodeLL.M-Model
+(e.g.,
+Base)n = Fibonacci
+def main():
+rest = 0
+for (i=11：
+ref, i==1,-1) an
+incorrect implementation
+return nAnswer:
+Recursive Code
+Incorrect - Requirement
+for dynamic programming
+not met.
++Input
+Img Text QuestionS t r e a m i n g
+C o d e
+r e s u l t s).
+2. Iterative loop structure is present.
+3. Wait, loop condition is incorrect and causes infinite loop for n>5.
+)Test Test1, Test2, PASS
+Test 3 P ASS ） （1. Base eases for n=0 and n=1 correctly implemented. (
+4 FAIL (
+A n s w e r :
+Incorrect - Answer contains logie error
+in loop condition.
+Algoritbm
+Understanding
+Control Flow
+Logic
+CheckingSyntax
+HandlingEdge CaseAlgo cheek: Code usse
+iterative soiutien (MSU Pass).
+Contr ol Flow ebeek:
+Base case for  n=3 (MSU Paas).
+Control Flow cbeck:
+Base case for  n=3 (MSU Paas).
+Syntax check: Failed
+indentation on line 5 (PSK Pail).MSU: Model-Specific Unknowns (e.g., algorithm choice)
+PSK: Prompt-Sensitive Known (e.g,, syntax error)
+or eede correction model.Actien: Reroute fer PSK fine-wniagLoeatiaed Failure: Syntex (PSK)Assets
+No, Scilure ee indeosatioa.Yes, base eases correct Control Flow
+(MSC Paas)
+Syntax?Logie?Sah-tack Essl Evalustien Resait
+Yes, herative DP reiected
+(MSU Pass)Algorithm
+choice?
+F i b o n a c c i  t e x t
+d y n a m i c
+p r o g r a m m i n g  t e x t
+r e c u r s i v e
+s t r u c t u r e
+Figure 1.Given a Python code generation task (e.g., “Implement Fibonacci using dynamic programming” from DS -1000), the left block
+shows a static benchmark (e.g., MMLU, GSM8K), which outputs only a binary correct/incorrect label without explaining why the
+model failed. The middle block presents a dynamic streaming benchmark (e.g., StreamBench), which provides binary feedback and
+supports continuous improvement signals, but still cannot distinguish the specific sub -task where the error occurred. The right block
+demonstrates our fine -grained process -aware streaming evaluation framework: the complex task is decomposed into atomic sub -tasks
+(algorithm understanding, control flow logic, syntax checking); a judge LLM independently evaluates each sub -task; failures are
+classified MSU vs.PSK; and a visualizable capability profile (chart) is produced. This enables precise failure localization and actionable
+model routing.
+The main contributions of this work are fourfold: 101
+• Paradigm innovation.We propose a critical shift from “outcome -based evaluation” to 102
+“process -level process-aware evaluation,” establishing an analytical framework for 103
+full-pipeline capability diagnosis. 104
+https://doi.org/10.3390/1010000
+
+=== PAGE 4 ===
+Version August 11, 2026 submitted to Journal Not Specified4 of 46
+• Methodology design.We design a three -step fine -grained analysis methodology: 105
+(1) define atomic sub -task systems based on domain expertise; (2) introduce a judge 106
+LLM to independently diagnose each sub -task and produce structured feedback; and 107
+(3) perform boundary identification of failure causes using the knowledge boundary 108
+theoretical framework, resulting in a visualizable capability profile. Our framework 109
+ASK-StreamDiag (Atomic Subtask & Knowledge boundary Streaming Diagnostics) 110
+builds upon the baseline Self-StreamICL architecture from StreamBench, and ex- 111
+tends it with atomic subtask decomposition, judge-based fine-grained diagnosis and 112
+MSU/PSK knowledge boundary classification modules.113
+• Dataset release.We release an open -source fine -grained evaluation dataset cover- 114
+ing three tasks (DS -1000, DDXPlus and toolbench), providing a public resource for 115
+standardized fine-grained evaluation. 116
+• Empirical validation.Leveraging the StreamBench platform [ 4], we systematically 117
+validate the proposed framework across the three tasks and multiple LLMs (Qwen, 118
+Kimi-k2.6, Zhipu, DouBao). Experimental results demonstrate the effectiveness and 119
+practicality of fine -grained process-aware analysis for model diagnosis, knowledge 120
+boundary identification, and differentiated deployment.121
+2. Related Work 122
+Table 1 offers a structured comparison of representative evaluation methods across 123
+three major lines of LLM assessment research: static benchmarks and their limitations, 124
+dynamic and streaming evaluation paradigms, and fine-grained process-aware evaluation 125
+approaches. Each entry corresponds to a set of studies with distinct methodological features, 126
+illustrating the gradual shift toward more diagnostic, process-oriented evaluation of LLM 127
+capabilities. 128
+https://doi.org/10.3390/1010000
+
+=== PAGE 5 ===
+Version August 11, 2026 submitted to Journal Not Specified5 of 46
+Table 1.Comparison of representative evaluation approaches across three diagnostic directions.
+Direction Representative
+WorksKey Features Advantages Limitations Scale Application
+Static Bench-
+marksMMLU[ 7],
+GSM8K[ 8], BIG-
+Bench Hard[9,10]Fixed test sets; objective
+final-answer scoringStandardized and
+reproducibleSaturation and con-
+tamination risk8k–57 tasks General and
+math reasoning
+MMLU-Pro[ 11]
+MMLU-ProX[ 12],
+GPQA[13]Harder answer sets;
+expert-level questionsBetter differentiation
+among strong mod-
+elsStill outcome-
+focused448 Qs–24
+disciplinesDomain reason-
+ing
+HELM[ 14], Open
+LLM Leaderboard
+v2[15]Multi-metric or commu-
+nity benchmark suitesBroad coverage and
+public comparabilityHigh cost; leader-
+board overfitting6–16 scenar-
+iosComprehensive
+LM evaluation
+MedQA[ 16],
+CodeXGLUE[17]Domain-specific
+QA/code tasksTests specialized
+capabilitiesDomain restricted 6–14
+datasetsMedical and
+code evaluation
+AGIEval[18] provides a human-
+centric benchmark
+designed to evaluate
+foundation models
+through cognitively ori-
+ented tasks.
+Dynamic/ Stream-
+ingChatbot Arena[ 19,
+20], LiveBench[21]Continuously updated
+or crowd-sourced evalu-
+ationReduces static-test
+contaminationPreference noise or
+benchmark driftMulti-
+domainReal-world
+model ranking
+SWE-bench[ 22],
+LiveCodeBench[23]Real-world software
+issues and contest tasksTracks deployable
+code abilityCode-focused 400+–2294
+instancesCode generation
+and repair
+MemPrompt[ 24],
+Reflexion[ 25],
+ExpEL[26]Memory, reflection, and
+experiential learningSupports post-
+deployment improve-
+mentTask-specific mem-
+ory qualityMultiple
+tasksAgent learning
+StreamBench[4] Input-feedback stream
+with repeated adapta-
+tionMeasures continuous
+improvementBinary feedback only 5 task do-
+mainsStreaming agent
+evaluation
+Process-Aware FineLogic[ 27],
+PRMs[28][29][30]Step-level rationality
+and reward signalsReveals intermediate
+reasoning errorsRequires step annota-
+tionsLogic/math
+tasksReasoning diag-
+nostics
+ProcessBench[31] Step-by-step error local-
+ization benchmarkDirectly evaluates
+process errorsMath-focused 3400 cases Process error
+detection
+Knowledge
+Boundary[6]MSU/PSK distinction
+via prompt perturbationSeparates absence
+from activation fail-
+ureRequires prompt
+variants10+ types Model under-
+standing
+UFEval[ 32],
+HDCEval[33]Fine-grained criteria
+across aspects/domainsTask and aspect-level
+diagnosisLarge annotation
+cost60.4k sam-
+plesMultimodal and
+clinical QA
+Our FrameworkASK-StreamDiag Atomic sub-task decom-
+position + judge LLM +
+MSU/PSK classificationStreaming process di-
+agnosis; visualizable
+profilesJudge overhead 3 task do-
+mainsFine-grained
+streaming evalu-
+ation
+2.1. Static Benchmarks and Their Limitations 129
+The assessment of large language models has long been anchored to static benchmarks, 130
+which quantify the intrinsic competence of models via zero-shot or few-shot testing on 131
+fixed test corpora. In their seminal work on GPT-3, Brown et al. validated the strong task 132
+adaptability of language models under few-shot conditions, thereby consolidating zero-shot 133
+and few-shot evaluation as mainstream experimental paradigms [ 34]. In the subsequent 134
+years, static test suites including MMLU [ 7], GSM8K [ 8], and BIG-Bench-Hard [ 10] have 135
+evolved into standard instrumentation for gauging the generalizable capabilities of LLMs. 136
+Nevertheless, the credibility of such static benchmarks has been subject to mount- 137
+ing skepticism within the research community [ 1,2,35]. Recent empirical investigations 138
+reveal that state-of-the-art LLMs attain over 90% prediction accuracy on MMLU, indi- 139
+cating pronounced performance saturation [ 1,36]. Gema et al. [ 1,36] further carried out 140
+a rigorous error auditing on MMLU and detected widespread ground-truth annotation 141
+defects; concretely, 57% of sampled items in the Virology subset were plagued by labeling 142
+inconsistencies. Such empirical outcomes have prompted pervasive doubts regarding the 143
+robustness of prevailing evaluation pipelines [ 2,6,35]. To mitigate the saturation dilemma, 144
+scholars have put forward more difficult benchmark derivatives exemplified by MMLU- 145
+https://doi.org/10.3390/1010000
+
+=== PAGE 6 ===
+Version August 11, 2026 submitted to Journal Not Specified6 of 46
+Pro[ 11] and MMLU-ProX[ 12]. This variant enlarges candidate answer choices from 4 to 146
+10, eliminates trivial test items, and prioritizes multi-step reasoning tasks to alleviate the 147
+shortcut memorization bias prevalent in LLMs. 148
+Apart from performance saturation, static benchmarks are confronted with more crit- 149
+ical methodological drawbacks. Banerjee et al. [ 2] delivered a comprehensive diagnosis 150
+of this predicament, demonstrating that inherent flaws embedded in static benchmark 151
+design, human annotation protocols, and LLM-as-judge evaluation architectures collec- 152
+tively degrade the validity of modern performance quantification. Yin et al. [ 6] insightfully 153
+noted that assessments built upon fixed question banks or constrained paraphrase sets lack 154
+both reliability and exhaustiveness, largely owing to the extreme prompt susceptibility 155
+exhibited by large language models. To tackle this pitfall, the authors proposed the notion 156
+of the knowledge boundary, which distinguishes between prompt-agnostic knowledge and 157
+prompt-dependent susceptible knowledge encoded inside model parameters [6].158
+Taken together, these drawbacks converge toward a more essential flaw: static bench- 159
+marks presuppose invariant model internal states throughout the evaluation process, and 160
+thus fail to characterize the dynamic performance drift induced by continuous real-world 161
+interactive deployment [3]. 162
+2.2. Dynamic and Streaming Evaluation 163
+As large language models are increasingly integrated into agent-based frameworks, 164
+growing research attention has been directed toward their post-deployment progressive 165
+adaptation capabilities. Madaan et al. [ 24] put forward MemPrompt, a pioneering study 166
+verifying that GPT-3 achieves incremental performance gains via persistent storage of 167
+user feedback. Shinn et al. [ 25] validated through Reflexion that LLM agents are capable 168
+of iterative performance enhancement on fixed datasets by virtue of self-reflection and 169
+repeated trial-and-error attempts. Zhao et al. [ 26] further demonstrated via ExpEL that 170
+LLM agents are able to transfer cross-task experiential knowledge, eliminating the need 171
+for redundant repetitive trials on target downstream tasks. Collectively, these studies 172
+underline a pivotal research tendency: LLMs possess the capacity not merely for one-shot 173
+knowledge acquisition, but also for sustained lifelong evolution.174
+StreamBench [ 4] bridges a prominent research gap within this evaluation dimension. 175
+Wu et al. [ 4] formally constructed a specialized benchmark tailored to quantify the continu- 176
+ous progressive learning capacity of LLM agents within sequential input-feedback streams. 177
+StreamBench covers a suite of practical real-world scenarios, ranging from Text-to-SQL 178
+conversion, Python programming and tool invocation to medical diagnosis and open- 179
+domain question answering, while establishing multiple baseline algorithms including 180
+GrowPrompt, MemPrompt, ASK-StreamDiag and MAM-StreamICL. Their empirical evi- 181
+dence corroborates that iterative user feedback yields substantial accuracy uplifts for LLMs 182
+on target tasks, thereby delivering solid empirical evidence to underpin the construction of 183
+dynamic evaluation paradigms. 184
+Nevertheless, StreamBench, akin to other dynamic evaluation benchmarks, is con- 185
+strained by low-resolution feedback pipelines that only yield simplistic binary pass/fail 186
+annotations as final evaluation outputs. While such dichotomous feedback enables longi- 187
+tudinal tracking of performance improvements, it fails to unpack the internal mechanics 188
+behind performance increments or clarify why certain optimization strategies function 189
+effectively at the atomic subtask granularity [3]. 190
+2.3. Fine-Grained Process-Aware Evaluation 191
+Prior literature discussed so far predominantly addresses the macroscopic research 192
+question of whether performance gains can be achieved, yet overlooks process-aware 193
+https://doi.org/10.3390/1010000
+
+=== PAGE 7 ===
+Version August 11, 2026 submitted to Journal Not Specified7 of 46
+inquiries regarding how such improvements are materialized and why particular optimiza- 194
+tion strategies take effect. Recent scholarship has shifted toward finer-grained evaluation 195
+paradigms, with the objective of dissecting the underlying inferential workflows inside 196
+large language models. 197
+Within the scope of logical reasoning assessment, Zhou et al. [ 27] devised the FineL- 198
+ogic framework to quantify LLMs’ logical reasoning proficiency along three orthogonal 199
+metrics: overall predictive accuracy, rationality at each individual reasoning step, and 200
+representational alignment. Their core assertion—that conventional benchmarks hinging 201
+merely on final answer accuracy fail to quantify the quality of intermediate reasoning 202
+chains—strongly resonates with the core motivation of our present work.203
+Process Reward Models (PRMs) constitute another relevant line of advancement in 204
+process-oriented supervision techniques [ 28]. Distinct from Outcome Reward Models that 205
+exclusively score final outputs, PRMs deliver stepwise evaluation and impose guidance 206
+on iterative reasoning procedures. She et al. [ 29] put forward R-PRM (Reasoning-Driven 207
+Process Reward Modeling), which activates the intrinsic reasoning capacity of LLMs to 208
+strengthen process-level diagnostic assessment. Zheng et al. [ 28] presented a holistic survey 209
+summarizing PRM research progress, and highlighted that fine-grained process supervision 210
+stands as a critical technical pathway to boost the reasoning robustness of LLMs.211
+Parallel progress on fine-grained evaluation has also proliferated across alternative 212
+task domains. For the medical diagnosis scenario, scholars introduced HDCEval, a metric 213
+system conducting multi-dimensional assessment covering patient question pertinence, cor- 214
+rectness of medical domain knowledge, and linguistic expression quality. This benchmark 215
+is constructed upon fine-grained evaluation protocols jointly formulated with practicing 216
+clinicians. Hong et al. [ 32] presented UFEval, the first generalized unified fine-grained 217
+evaluator supporting cross-task and cross-aspect generalization over four downstream 218
+tasks. Built upon the FRABench dataset containing 60.4k pairwise annotated samples 219
+that cover 112 heterogeneous evaluation dimensions, this tool achieves broad applicability 220
+across diverse evaluation facets. 221
+2.4. Knowledge Boundary and LLM-as-a-Judge 222
+When exploring the boundary of model capability limits, the knowledge boundary 223
+framework serves as a vital theoretical analytical perspective. Yin et al. [ 6] put forward this 224
+formulation to resolve the inherent vulnerability of large language models toward prompt 225
+lexical variations: identical underlying knowledge manifests drastically divergent outputs 226
+under distinct prompt templates. The authors taxonomize model internal knowledge 227
+into prompt-agnostic knowledge and prompt-sensitive knowledge. This categorization 228
+abandons the oversimplified binary dichotomy of "knowledge presence versus absence", 229
+and instead shifts the research focus to the expressive form of encoded knowledge as well 230
+as the conditional prerequisites for its effective activation.231
+This theoretical framework delivers a powerful diagnostic tool for root-cause analysis 232
+of model failure cases. For a task failure event, the underlying driver rarely stems from gen- 233
+uine knowledge deficiency; more frequently, it arises from the failure of internal knowledge 234
+to be successfully triggered by the given prompt formulation. The dichotomy between 235
+Model-Specific Unknowns (MSU) and Prompt-Sensitive Known (PSK) can be seamlessly 236
+embedded into fine-grained evaluation pipelines. Within our proposed framework, per- 237
+formance fluctuations of identical failed test samples under varied prompt settings are 238
+treated as diagnostic indicators to distinguish the two failure modes. Specifically, MSU 239
+corresponds to persistent task failure across all prompt rewrites, which strongly suggests 240
+critical knowledge gaps[35]. By contrast, PSK refers to volatile performance outcomes un-241
+https://doi.org/10.3390/1010000
+
+=== PAGE 8 ===
+Version August 11, 2026 submitted to Journal Not Specified8 of 46
+der different prompts, indicating that required knowledge is inherently embedded within 242
+the model yet cannot be stably activated. 243
+In parallel, the LLM-as-a-judge paradigm has evolved into a scalable substitute for 244
+costly human annotation. Nevertheless, cumulative existing literature has exposed sub- 245
+stantial inherent drawbacks of this evaluation paradigm. Empirical evidence demonstrates 246
+that if the referee model exhibits no superiority in accuracy relative to the evaluated tar- 247
+get model, debiasing algorithms are unable to reduce over half of the required manually 248
+annotated ground-truth labels. This observation reveals severe bottlenecks restricting the 249
+applicability of LLM-as-judge at the cutting edge of evaluation research. To circumvent 250
+such pitfalls in our fine-grained streaming evaluation framework, we adopt a referee 251
+LLM with validated stronger overall performance than all tested target models, thereby 252
+substantially alleviating the aforementioned reliability risks[2,35].253
+2.5. Summary and Positioning 254
+In summary, existing evaluation approaches can be categorized into three paradigms. 255
+Static benchmarks (Section 2.1) provide coarse-grained final-answer labels but offer no 256
+support for diagnosing internal failures and cannot capture continuous improvement. 257
+Dynamic streaming benchmarks (Section 2.2), exemplified by StreamBench, can track im- 258
+provement over time but still output only binary feedback without explaining why models 259
+fail. Fine-grained process-aware evaluation (Sections 2.3–2.4) has emerged across multiple 260
+domains—including logical reasoning (FineLogic), step-level supervision (PRMs), medical 261
+evaluation (HDCEval), and unified fine-grained evaluators (UFEval)—demonstrating the 262
+value of process-level assessment. 263
+Our framework unifies and extends these strands of work by integrating atomic 264
+sub-task decomposition, multi-agent LLM-based diagnostic evaluation, and knowledge 265
+boundary classification (MSU vs. PSK) within a streaming evaluation environment. This 266
+design moves beyond “outcome-based” evaluation toward “process-based process-aware 267
+analysis,” enabling precise failure localization, adaptive model routing, and visualizable 268
+capability profiles. Leveraging the StreamBench platform [ 4], we systematically validate 269
+the proposed framework across five representative tasks.270
+2.6. Reliability issues of LLM - as - judge 271
+Despite its efficacy, the deployment of LLMs as evaluators introduces inherent reli- 272
+ability concerns [? ?]. Studies have demonstrated that judge LLMs are susceptible to 273
+various biases, including positional bias, verbosity bias, and self-enhancement, which can 274
+compromise the fidelity of the evaluation [?]. Our framework mitigates these risks by 275
+employing a multi-pronged strategy: (1) utilizing a high-capability judge (GPT-4) with a 276
+low-temperature setting to ensure deterministic outputs; (2) requiring the judge to provide 277
+structured evidence and reasoning for its decisions; and (3) when applicable, aggregating 278
+judgments from multiple models or using iterative cross-verification to enhance the ro- 279
+bustness of the final diagnosis. This rigorous design ensures that the diagnostic feedback 280
+is not only fine-grained but also sufficiently reliable to inform downstream deployment 281
+decisions. 282
+3. Preliminary 283
+3.1. Streaming Evaluation Setup 284
+3.1.1. Problem Formulation 285
+We consider a streaming scenario where a large language model (LLM) agent interacts 286
+with an environment over a sequence of tasks. Following the setting of StreamBench [ 4], the 287
+agent receives a sequence of inputs {(x t,yt)}T
+t=1where xtis a natural language requirement 288
+https://doi.org/10.3390/1010000
+
+=== PAGE 9 ===
+Version August 11, 2026 submitted to Journal Not Specified9 of 46
+(e.g., a scientific question, a Python coding problem, a medical symptom description) and 289
+ytis the corresponding ground-truth output. However, in practice the ground truth ytis 290
+not revealed to the agent at inference time. Instead, after the agent produces its output ˆyt, 291
+the environment returns a binary feedback signalf t∈ {0, 1}indicating correctness:292
+f bt=g(x t,ˆyt),f b t=1[ ˆytmatchesy t](1)293
+where g(·) is an oracle that simulates user feedback. This binary feedback is cheap to 294
+obtain in real applications (e.g., thumbs-up/down) and serves as the only learning signal 295
+for the agent’s continuous improvement [4]. 296
+The agent maintains a memory M(e.g., a vector database) that stores past experiences. 297
+At time step t, the agent retrieves relevant examples from Mand conditions its prediction 298
+on them. The goal is to maximize the cumulative accuracy over the entire stream:299
+max1
+TT
+∑
+t=11[ˆyt=y t](2)300
+3.1.2. Binary Feedback and Its Limitations 301
+While binary feedback enables continuous improvement, it suffers from coarse granu- 302
+larity. Formally, let the overall correctness be coverall∈ {0, 1}. For a complex task that can 303
+be decomposed into Katomic sub-tasks {s1,. . .,sK}with individual correctness ck∈ {0, 1}, 304
+the relationship is: 305
+coverall =K^
+k=1ck(assuming all sub-tasks must succeed) (3)306
+Binary feedback provides only coverall , offering no information about which ckfailed 307
+or why. As demonstrated in recent critiques of coarse-grained evaluation [ 1,2], this opacity 308
+prevents targeted model improvement. 309
+3.2. Knowledge Boundary Framework 310
+3.2.1. Model-Specific Unknowns (MSU) 311
+Following Yin et al. [ 6], we adopt the knowledge boundary framework. For any given 312
+task (or sub-task), a model’s behavior can be classified into two types. The first type isMSU: 313
+the model consistently fails on the task even when the prompt is varied (e.g., rephrasing, 314
+adding few-shot examples). This indicates that the required knowledge is absent from the 315
+model’s parameters. Remediation requires fine-tuning or external retrieval.316
+3.2.2. Prompt-Sensitive Known (PSK) 317
+The second type isPSK: the model succeeds under some prompts but fails under 318
+others. The knowledge exists internally but is not reliably activated. This can be addressed 319
+by prompt engineering or calibration. 320
+3.2.3. Diagnostic Prompt Perturbation 321
+Formally, let Pbe a set of prompt variants for a given instance x. Define the empirical 322
+success rate 323
+r=1
+|P|∑
+p∈P1[y(p) =y](4)324
+Then 325
+MSU⇐⇒r<τ low, PSK⇐⇒τ low≤r<τ high (5)326
+https://doi.org/10.3390/1010000
+
+=== PAGE 10 ===
+Version August 11, 2026 submitted to Journal Not Specified10 of 46
+with thresholds τlow(e.g., 0.2) and τhigh(e.g., 0.8). In our framework, we apply prompt 327
+perturbation (e.g., paraphrasing the instruction, changing few-shot examples) to diagnose 328
+each sub-task’s boundary type. This classification enables targeted remediation: MSU 329
+errors require knowledge injection, while PSK errors can be resolved through prompt 330
+optimization. 331
+3.3. Sub-task Correctness Indicators 332
+Each sub-task is evaluated independently by a judge LLM (see Section 4.2). Let 333
+ck∈ {0, 1}denote the correctness indicator for sub-task k. Traditional streaming evaluation 334
+only provides a single binary label f bt(overall correctness). Our goal is to recover {ck}K
+k=1335
+for each input xtand aggregate them over the stream to produce a capability profile and 336
+knowledge boundary map. Following the probabilistic framework of process supervi- 337
+sion [ 28,37], the relationship between sub-task correctness and overall correctness can be 338
+expressed as: 339
+p(coverall =1| {c k}) =K
+∏
+k=1p(coverall =1|c k)(under independence) (6)340
+This factorization motivates our fine-grained approach: by diagnosing each ck, we can 341
+isolate the root cause of failure and apply targeted corrections.342
+3.4. Bayesian Interpretation of Judge Aggregation 343
+To aggregate judgments from multiple judge LLMs, we adopt a Bayesian perspective. 344
+Letekbe a binary random variable indicating whether sub-task kis correctly executed, 345
+and let Y={y m,k}be the set of judgments from Mjudge models. Assuming conditional 346
+independence of judges given the true entity state, the posterior correctness probability is: 347
+p(ek=1|Y,X)∝p(e k=1|X)M
+∏
+m=1p(y m,k|ek=1,X)
+p(y m,k|ek=0,X)(7)348
+This formulation, adapted from Li et al.[ 38,39], justifies aggregating multiple judge 349
+outputs to obtain a reliable correctness estimate. In our implementation, we approximate 350
+this posterior using a scoring function (detailed in Section 4.2) that maps natural language 351
+judge feedback to confidence scores, enabling robust sub-task diagnosis without requiring 352
+ground-truth labels [40,41]. 353
+4. Method 354
+This work puts forward a fine-grained process-aware diagnostic framework that can be 355
+seamlessly plugged into arbitrary streaming evaluation pipelines, with StreamBench serv- 356
+ing as a representative instantiation [ 4]. The overall workflow of the proposed framework 357
+is partitioned into four sequential modules, as visualized in Figure 2.358
+Stage 1 conducts the definition of atomic subtasks grounded in domain-specific exper- 359
+tise, with concrete implementation cases for DS-1000, DDXPlus and Toolbench elaborated 360
+in Section 3.3. Stage 2 leverages a referee LLM to produce structured diagnostic feedback 361
+for each decomposed subtask individually. Stage 3 executes automatic classification under 362
+the knowledge boundary taxonomy. Stage 4 further supports adaptive dynamic model 363
+routing strategies according to the derived capability diagnosis profiles.364
+https://doi.org/10.3390/1010000
+
+=== PAGE 11 ===
+Version August 11, 2026 submitted to Journal Not Specified11 of 46
+ASK-StreamDiag Pipeline
+Stage 1: Complex Task Decomposition & Fallure Localization Stage 2: Independent Judge LLM & Structured Diagnosis
+Stage 3: Verification & MSU-based Adaptive Routing
+Decomposition & Localization Module
+1. Model locks Dynamic Programming knowledgePerturbation Test & Verification Loop
+2. Q: (rephrase: 'using memoization') Fibonacet?1. Q: (few-shot DP example) Fibonacet? 
+3. Final success rate r           . MSU classification.Prompt Perturbation Module
+3. Final fallure in Algorithm (Sub-task 1).Verifier & ClassificationQuestion: Provide correct DP code.(b) Failed Model Output
+M odel Ans. Incorreet recursive code.
+2. Control flow is for recursion.(a) Task Description
+Visualizable Capability ProfileAggregated Initial Fall OutputDS-1000: Implement Fibonacci
+using dynamie programming
+(rephrasing, few-shot)
+Expert ModelsExpected DP, get recursion
+CoT: c=(s1,s2.........sk)
+& Deployment DecisionsAnswer GeneratorFinal count example:
+( Perturbation Test )Map Errors to Sub-tasks(c)  Question
+Code Structure AnalysisDetermine Failure Points
+Comments:(uses recorsion).
+(MSU failure).
+Success Rate 'sEngine
+Syntax DebuggerFailure Message:
+Module SelectionProgramming
+M  = Fuse(V, T)
+Legie VerifierAPI Checker# Fallure Message:Failed CodeRecursive Dynamic
+-> FAILRecursion
+(I, T, Q)structure
+Code
+Input
+Inputtexttext
+text
+Aggregation of Judge Opinions
+(Replaces entity and clear examp .. )"reason": "used recursion, not DP"{"subtask": "algorithm",Sub-tasks Definition
+Algorithm (text extractr)
+Control Plow (extractor)
+Variable Usage (like)(like text extractor)
+"status": 0,
+SyntaxOutput
+Output}}[[ GPT-4
+- > FAIL
+= 0%
+Failure Table
+Control FlowAlgorithm
+Text extractSub-tasks Algorithm
+SyntaxStatus
+FAIL0.0%
+0.2%FAIL
+FAILFAIL
+0.0%0.0%0
+0
+0
+0Reason
+Syntax Var UsageAlgo M SU Control
+FlowAlgorithmBased on failed question perturbation
+tests (r=0), verify diagnosis. The
+model completely lacks DP
+knowledge, Confirm classification as
+MSU (Knowledge Absence).
+Figure 2.The ASK-StreamDiag pipeline: a unified, three-stage framework for fine-grained streaming evaluation, with an optional
+fourth stage for adaptive deployment intervention.
+4.1. Problem Formulation for Streaming Evaluation 365
+We formalize the streaming evaluation problem as follows. Let T={(x t,yt)}T
+t=1366
+be a stream of tasks, where xtis a natural language instruction (e.g., a Python coding 367
+problem) and ytis the ground -truth output. At inference time, a target LLM produces 368
+ˆyt=π(x t;Mt), where Mtdenotes the model’s memory updated from past feedback. 369
+The environment returns a binary feedback f bt=1[ ˆyt=y t], which is the only signal for 370
+continuous improvement [ 4]. Traditional evaluation only records {f b t}, which fails to 371
+diagnose why the model failed. 372
+To enable fine -grained diagnosis, we decompose each complex task into Katomic 373
+sub-tasks s1,. . .,sK(Section 3.3). Let ck∈ {0, 1}be the correctness of sub -task k. The overall 374
+correctness satisfies f bt=VK
+k=1ckunder typical dependencies. Our goal is to recover 375
+the vector (c1,. . .,cK)and classify each failure as either MSU or PSK according to the 376
+knowledge boundary framework [ 6]. This recovery problem is formulated as a Bayesian 377
+inference over sub-task correctness, which we detail in Section 4.3.378
+We strictly separate core streaming evaluation stages and optional deployment inter- 379
+vention. The fixed unified pipeline contains three mandatory evaluation stages, plus an 380
+independent optional routing/repair stage decoupled from core assessment:381
+Stage 1: Atomic Subtask Decomposition (fixed domain taxonomy, pre-defined before 382
+model inference) 383
+Stage 2: Subtask Judge Evaluation (per-subtask correctness assessment via judge LLM)384
+Stage 3: Knowledge Boundary (MSU/PSK) Classification (prompt perturbation testing 385
+on failed subtasks) 386
+Optional Stage 4: Adaptive Prompt Repair / Model Routing (deployment intervention, 387
+not part of the evaluation framework itself)388
+https://doi.org/10.3390/1010000
+
+=== PAGE 12 ===
+Version August 11, 2026 submitted to Journal Not Specified12 of 46
+4.2. Three-stage Verification Framework 389
+4.2.1. Stage 1: Atomic Sub-task Decomposition 390
+Given an input xtand the target model’s output ˆyt, the first stage breaks the task into 391
+atomic sub -tasks using domain -specific taxonomies (Section 3.3). For the DS -1000 Python 392
+code generation task, we define the following sub-tasks:393
+• Algorithm understanding:Does the model choose the correct algorithm (e.g., dynamic 394
+programming vs. recursion)? 395
+• Control flow correctness:Are loop boundaries and conditionals correctly imple- 396
+mented? 397
+•Variable and data structure usage:Are variables properly initialized and updated?398
+• Syntax and output formatting:Is the code syntactically valid and does it produce the 399
+expected output? 400
+Each sub -task skis evaluated independently. Stage 1 employs a dynamic dispatching 401
+mechanism grounded in a pre-defined, domain-specific taxonomy. The dispatcher, instanti- 402
+ated as GPT-3.5, receives the target task and dynamically selects and instantiates the most 403
+relevant subtasks from a fixed taxonomy template for that domain. For instance, for a 404
+DS-1000 Python task, the dispatcher will decompose it into ‘Algorithm Understanding‘, 405
+‘Control Flow‘, etc., while for a ToolBench task, it will select ‘Intent Recognition‘ and ‘API 406
+Call Syntax‘. This ensures both the flexibility to handle diverse inputs and the consistency 407
+needed for downstream quantitative profiling. 408
+4.2.2. Stage 2: Diagnostic Evaluation via Judge LLM 409
+We introduce a high -performance judge LLM (e.g., GPT -4 or a dedicated evaluator) 410
+that receives the original input xt, the target model’s output ˆyt, and the list of sub -tasks. 411
+For each sub-tasks k, the judge LLM produces a structured JSON object:412
+judgek=
+status∈ {0, 1}, confidence : float(0–1), reason : string, evidence_span : string(e.g., line numbers or quote), suggestion : string	
+,
+(8)413
+where status indicates success (1) or failure (0), reason explains the failure (e.g., “incorrect 414
+loop condition”), and evidence quotes the relevant part of ˆyt. The judge LLM is prompted 415
+to be critical and to provide fine -grained feedback. We use a temperature of 0.2 to ensure 416
+deterministic outputs. This stage produces a setR={judgek}K
+k=1.417
+We elaborate the operational workflow via a concrete illustrative case selected from 418
+the DS-1000 benchmark. The user query requires the implementation of a function that com- 419
+putes the Fibonacci sequence following dynamic programming paradigms. Nevertheless, 420
+the target model produces faulty code that adopts recursive implementation mistakenly 421
+instead of the mandated dynamic programming approach. In Stage 1, the holistic task is 422
+disassembled into the four atomic subtasks outlined above. Subsequently, the referee LLM 423
+deployed in Stage 2 conducts independent assessment for each decomposed subtask, with 424
+detailed evaluation results presented as follows: 425
+• Algorithm understanding:failure– “model used recursion, not dynamic program- 426
+ming.” 427
+• Control flow:success– “recursion base case and recursive calls are correct.”428
+• Variable usage:success– “variables are properly defined.”429
+• Syntax:success– “code is syntactically valid.” 430
+Thus the judge identifies the root cause as an algorithm misunderstanding rather than a 431
+syntax error. 432
+https://doi.org/10.3390/1010000
+
+=== PAGE 13 ===
+Version August 11, 2026 submitted to Journal Not Specified13 of 46
+4.2.3. Stage 3: Knowledge Boundary Classification and Capability Profiling433
+The third stage aggregates the per -sub-task judgments to produce a capability profile 434
+and to classify failure types. For each sub -task skwhere status= 0, we perform a prompt 435
+perturbation test to decide whether the failure is MSU or PSK. Specifically, we gener- 436
+atePprompt variants (e.g., rephrasing the instruction, adding few -shot examples) and 437
+re-evaluate the target model on the same sub -task. Let r=1
+P∑P
+p=11[success on variantp] . 438
+Using thresholdsτ low=0.2 andτ high=0.8: 439
+type(s k) =
+
+MSU ifr<0.2,
+PSK if 0.2≤r<0.8,
+Reliable ifr≥0.8.(9)440
+It is crucial to distinguish the evaluation subjects: the diagnostic accuracy of our framework 441
+is assessed by comparing the judge LLM’s verdict against human-annotated gold labels on 442
+a held-out set. In contrast, the task completion rate reported in the main experiments is 443
+an objective performance metric, measured by comparing the target model’s final output 444
+against the ground truth (e.g., using Exact Match for code, or the official evaluation script445
+for DDXPlus). For MSU/PSK classification, the status after each perturbation is still 446
+determined by the judge LLM, as there is no ground truth for these intermediate failure 447
+modes. 448
+MSU corresponds to definitive inherent knowledge deficiency within the model, 449
+whereas PSK denotes the condition where required knowledge is internally encoded yet 450
+susceptible to variations in prompt wording. Subsequent to failure categorization, our 451
+framework generates an interpretable, visualizable capability spectrum (exemplified by sta- 452
+tistical charts) that records subtask-level success ratios alongside MSU or PSK failure labels. 453
+Such quantitative profiles can underpin adaptive model routing strategies: for subtasks 454
+diagnosed as PSK-type failures, researchers can mitigate performance volatility via prompt 455
+optimization techniques; for MSU-type deficiencies, feasible remedies include migrating 456
+inference tasks to alternative models or retrieving external supplementary knowledge 457
+bases. 458
+Revisiting the DS-1000 illustrative case, the referee LLM flagged insufficient algorithm 459
+comprehension as the root cause of task failure. Stage 3 conducts systematic prompt per- 460
+turbation testing. When the original instruction is paraphrased as “Write a function that 461
+computes Fibonacci numbers using iteration and memoization (i.e., dynamic program- 462
+ming)”, the target model still outputs recursive implementations erroneously. Even after 463
+supplementing few-shot demonstrations of standard dynamic programming solutions, the 464
+model fails to yield correct code. Given the calculated metric r= 0, this failure case is 465
+formally categorized asMSU. This outcome verifies that the evaluated model lacks critical 466
+proficiency in designing Fibonacci algorithms via dynamic programming, indicating that 467
+basic prompt refinement cannot resolve such intrinsic shortcomings. The derived capability 468
+profile explicitly highlights severe deficits in algorithmic understanding, which can guide 469
+task dispatching toward more competent alternatives—such as models specially fine-tuned 470
+on dynamic programming problem sets. 471
+4.3. Bayesian Interpretation and Confidence Aggregation 472
+We provide a probabilistic justification of our judge aggregation and classification.473
+Letekbe a binary random variable indicating whether sub-task kis correctly executed 474
+by the target model. Let Y={y m,k}be the outputs of Mjudge LLMs (in our framework 475
+https://doi.org/10.3390/1010000
+
+=== PAGE 14 ===
+Version August 11, 2026 submitted to Journal Not Specified14 of 46
+we typically use one judge, but multiple can be used). Assuming conditional independence 476
+of judges givene k, the posterior probability of correctness is:477
+p(ek=1|Y,X)∝p(e k=1|X)M
+∏
+m=1p(y m,k|ek=1,X)
+p(y m,k|ek=0,X). (10)478
+In practice, we approximate this posterior by using a single high-capability judge LLM (e.g., 479
+GPT-4Kimi-k2.6) and treat its binary output as a hard decision. The prompt perturbation 480
+test for MSU/PSK can be regarded as posterior sampling across different prompt variants, 481
+which reflects the unstable output performance near the model’s knowledge decision 482
+boundary. 483
+The confidence in the judge’s evaluation is modeled via a score function that converts 484
+natural language reasons into a numeric confidence qk∈[0, 1]. For example, if the judge 485
+explicitly says “the code is completely wrong”, qk=0.1; if it says “likely correct”, qk=0.99. 486
+These scores are used to weight the contribution of each sub-task to the final profile. 487
+The overall capability score for the target model on task typetis defined as:488
+cap(t) =1
+KK
+∑
+k=1qk·I[status k=1]. (11)489
+Such quantitative metrics can be rendered into visualized charts categorized by distinct 490
+task domains, including algorithmic comprehension, control flow logic, and grammati- 491
+cal syntax compliance. As new tasks are continuously processed within the streaming 492
+pipeline, our framework iteratively refreshes the constructed capability spectrum, thereby 493
+underpinning data-driven adaptive deployment strategies.494
+https://doi.org/10.3390/1010000
+
+=== PAGE 15 ===
+Version August 11, 2026 submitted to Journal Not Specified15 of 46
+Algorithm 1Three-stage Fine-grained Streaming Evaluation Framework
+Require: Streaming tasks {(x t,yt)}T
+t=1, Target LLM π, Judge LLM J, Task dispatcher D, Sub-task
+taxonomySper domain, Prompt variants setP(sizeP), Thresholdsτ low=0.2,τ high=0.8
+Ensure: Capability profile cap(t) per task, Knowledge boundary labels (MSU/PSK) for failures,
+Adaptive routing decisions
+1: Stage 1: Atomic Sub-task Decomposition
+2:foreach incoming task(x t,yt)in streamdo
+3:ˆyt←π(x t)▷Target model generates output
+4:{s 1,s2, . . . ,s K} ←D(x t,ˆyt,S)▷Decompose into atomic sub-tasks
+5:end for
+6: Stage 2: Diagnostic Evaluation via Judge LLM
+7: InitializeR ←∅
+8:foreach sub-tasks kdo
+9: judgek←J(x t,ˆyt,sk)▷Structured JSON: status, reason, evidence
+10:R ← R ∪ {judgek}
+11:end for
+12: Stage 3: Knowledge Boundary Classification and Capability Profiling
+13:foreach sub-tasks kwith status k=0do
+14:r←0
+15:foreach prompt variantp∈ Pdo
+16:ˆy(p)
+t←π(p(x t))▷Re-evaluate with prompt perturbation
+17: judge(p)
+k←J(p(x t),ˆy(p)
+t,sk)
+18:r←r+1[status(p)
+k=1]
+19:end for
+20:r←r/P▷Empirical success rate
+21:ifr<τ lowthen
+22: type(s k)←MSU▷Model-Specific Unknown: genuine knowledge absence
+23:else ifτ low≤r<τ highthen
+24: type(s k)←PSK▷Prompt-Sensitive Known: exists but not reliably activated
+25:else
+26: type(s k)←Reliable
+27:end if
+28:end for
+29: cap(t)←1
+K∑K
+k=1qk·1[status k=1]▷Radar-chart capability score
+30:Update dynamic routing table: MSU →stronger model or external retrieval; PSK →
+prompt optimization
+31:returncap(t),{type(s k)}, updated routing policy
+4.4. qk Calibration 495
+To avoid arbitrary mapping, we calibrate the confidence score qkthrough a simple yet 496
+effective lookup mechanism. The judge LLM is prompted to include a specific confidence497
+phrase in its evidence field. For example, “the code is completely wrong” maps to a qkof 498
+0.1, “likely correct, but with minor issues” maps to 0.6, and “the code is perfectly correct” 499
+maps to 0.99. These phrases are calibrated on a small validation set (50 samples per dataset) 500
+to ensure consistency. In cases where the judge’s reasoning is ambiguous, a default score of 501
+0.5 is assigned. 502
+5. Experiments 503
+This section elaborates on the rigorous quantitative evaluation of our proposed fine- 504
+grained streaming assessment framework within the scenario of LLM-driven sequential task 505
+execution. We conduct empirical validations across three widely adopted benchmark suites: 506
+DS-1000 for Python code generation, DDXPlus targeting medical diagnostic reasoning, 507
+and ToolBench focusing on tool invocation and API interaction. The core objective of our 508
+https://doi.org/10.3390/1010000
+
+=== PAGE 16 ===
+Version August 11, 2026 submitted to Journal Not Specified16 of 46
+evaluation lies in verifying whether the pipeline combining atomic subtask decomposition, 509
+referee LLM-driven diagnostic auditing, and MSU/PSK failure taxonomy classification is 510
+capable of boosting overall streaming performance and delivering actionable guidelines 511
+for differentiated model routing strategies. 512
+To quantitatively validate the aforementioned hypothesis, we design comparative 513
+experiments to benchmark the performance of our approach against multiple baseline 514
+variants and diverse LLM backbones, including Qwen, Kimi-k2.6, Zhipu and DouBao. Our 515
+evaluation metrics span three critical dimensions: global streaming prediction accuracy, 516
+fine-grained diagnostic granularity, and the performance gains brought by MSU/PSK- 517
+instructed adaptive adjustment. Special attention is devoted to quantifying the extent to 518
+which subtask-level progressive verification improves the robustness of model reasoning 519
+and facilitates data-informed dynamic model dispatching.520
+5.1. Datasets 521
+5.1.1. DS-1000 522
+DS-1000 serves as a canonical benchmark dedicated to data science-oriented Python 523
+code generation tasks [ 5]. It encompasses a total of 1,000 programming challenges covering 524
+mainstream scientific computing libraries including NumPy, Pandas and Scikit-learn. Each 525
+test instance is equipped with three standardized components: natural language task 526
+descriptions, predefined code skeletons, and executable unit test cases. For the purpose of 527
+streaming evaluation in our work, we treat every individual problem as an independent 528
+sequential task within the evaluation stream. 529
+Around 80% of the test items demand multi-hop logical reasoning, such as structured 530
+data transformation and algorithmic logic implementation. This characteristic renders 531
+DS-1000 highly appropriate for validating fine-grained subtask-level diagnostic assessment 532
+across four fault dimensions: algorithmic comprehension, control flow rationality, variable 533
+specification, and grammatical syntax compliance. We further conduct unified format 534
+preprocessing on the entire dataset to standardize input prompt templates, which facilitates 535
+chain-of-code generative inference, atomic subtask dismantling, and referee-LLM-driven 536
+automated verification. 537
+5.1.2. DDXPlus 538
+DDXPlus constitutes a clinical diagnostic dataset designed to mimic real-world differ- 539
+ential diagnosis procedures based on patient symptom manifestations and historical medi- 540
+cal records [ 42], alongside other authoritative medical reasoning benchmarks MedQA [ 16] 541
+and MedXpertQA [ 43]. Each clinical case comprises textual descriptions of clinical man- 542
+ifestations (e.g., “fever, cough, fatigue”), relevant risk factors, and a candidate pool of 543
+suspected illnesses. The core task targets the accurate identification of the definitive pri- 544
+mary diagnosis. In our experiments, we adopt the publicly released version containing 545
+1,200 samples configured for streaming sequential evaluation.546
+Diagnostic reasoning over DDXPlus relies on sequential inference across five decom- 547
+posed atomic subtasks: symptom comprehension, differential disease enumeration, risk 548
+factor weighting, definitive diagnosis determination, and diagnostic justification validity 549
+assessment. Owing to its rigorous clinical constraints that necessitate stringent semantic 550
+accuracy, this dataset serves as an ideal testbed for MSU/PSK boundary categorization. A 551
+typical failure pattern observed here lies in the scenario where the model internally encodes 552
+relevant disease knowledge yet cannot trigger the corresponding valid diagnostic logic 553
+under specific prompt formulations. 554
+Collectively, MedQA and MedXpertQA complement DDXPlus in systematically eval- 555
+uating the professional medical logical deduction and clinical case analysis capabilities of 556
+https://doi.org/10.3390/1010000
+
+=== PAGE 17 ===
+Version August 11, 2026 submitted to Journal Not Specified17 of 46
+Table 3.Comparison with existing continual learning prompting methods. ✓denotes supported functionality, while ×means the
+method lacks the corresponding module.
+Method Core Mechanism Memory Sub-task Diagnosis MSU/PSK
+ClassificationRouting
+Zero-Shot, Few-
+Shot, CoTStandard
+prompting× × × ×
+GrowPrompt, Mem-
+Prompt [?]Memory of
+past feedback✓× × ×
+Self-StreamICL,
+MAM-StreamICL [?
+]Experience
+replay, multi-
+agent memory✓× × ×
+ASK-StreamDiag
+(Ours)FD-guided mem-
+ory & routing✓ ✓ ✓ ✓
+intelligent systems, jointly forming a comprehensive evaluation system for expert-level 557
+medical question answering and diagnostic reasoning. 558
+5.1.3. ToolBench 559
+ToolBench serves as a canonical benchmark for assessing the tool-utilization capabil- 560
+ities of large language models, which mandates the model to execute a complete work- 561
+flow including external API invocation (e.g., arithmetic calculators, database retrieval, 562
+web search engines), parameter parsing, standardized calling formulation, and returned 563
+outcome interpretation [ 44]. For our empirical validation, we adopt a sampled subset 564
+consisting of 800 test instances covering three typical tool categories: SQL database queries, 565
+arithmetic computing modules, and weather inquiry APIs. The streaming evaluation 566
+paradigm is designed to simulate authentic human-assistant interactive scenarios in practi- 567
+cal deployment. 568
+The task is further decomposed into four atomic subtasks: user intent identification, 569
+parameter value extraction, standardized calling syntax specification, and returned content 570
+semantic parsing. ToolBench quantitatively measures model proficiency in complying with 571
+rigid structured output schemas and conducting error rectification for ill-formed function 572
+calls. This evaluation setting frequently triggers PSK-type failure cases; a representative 573
+instance lies in correct task intent perception accompanied by invalid JSON serialization 574
+formats.Table 2 provides aggregated statistical summaries for all three adopted datasets.575
+Table 2.Datasets for streaming evaluation with atomic sub-task decomposition.
+Dataset Samples Task Type Sub-tasks Evaluation Metrics
+DS-1000 1,000 Code generation
+(Python)4 Accuracy, Exact Match,
+F1 Score, MCC
+DDXPlus 1,200 Medical diagnosis 5 Accuracy, Exact Match,
+F1 Score, MCC
+ToolBench 800 Tool/API usage 4 Accuracy, Exact Match,
+F1 Score, MCC
+5.2. Baselines and Comparison Models 576
+To establish a comprehensive evaluation of streaming fine -grained reasoning, a di- 577
+verse set of baseline methods is selected from the StreamBench family[ 4], as summarized 578
+in Tables 1 and 3. These baselines span both zero -shot prompting and memory -augmented 579
+continuous improvement. Among the non -diagnostic baselines,Zero -Shot, Few -Shot, 580
+CoT(Chain -of-Thought), andSelf -Refinerepresent standard prompting strategies without 581
+https://doi.org/10.3390/1010000
+
+=== PAGE 18 ===
+Version August 11, 2026 submitted to Journal Not Specified18 of 46
+streaming memory.GrowPromptandMemPromptintroduce memory of past exam- 582
+ples but still rely on binary feedback only[ 24][25].Self -StreamICL(without routing) and 583
+MAM -StreamICLare stronger memory baselines that improve via experience replay or 584
+multi-agent memory[4]. 585
+Our proposed methodASK-StreamDiagintegrates:586
+• Atomic sub-task decomposition (Stage 1), 587
+• Judge LLM (GPT-4) for per-sub-task diagnosis (Stage 2),588
+• MSU/PSK classification and capability profiling (Stage 3),589
+• Adaptive model routing based on the profile. 590
+All comparative approaches are assessed under the unified streaming evaluation protocol 591
+elaborated in Section 3.1, with the stream length constrained within the range of 500 to 592
+1,200 test samples for each individual dataset. Overall classification Accuracy (Acc) is 593
+designated as the primary quantitative metric, which is formally defined as the fraction of 594
+tasks that receive correct model predictions throughout the sequential stream. This metric 595
+aligns with the evaluation criteria established in prior streaming assessment literature [ 4], 596
+which guarantees fair and direct cross-method comparison.597
+5.2.1. Budget-Matched Control Baselines 598
+To eliminate unfair comparison caused by unequal LLM API compute budgets, we 599
+add four supplementary controlled baseline variants with identical external model access600
+as ASK-StreamDiag: 601
+1. Binary+GPT4-Judge: Original memory baselines (MAM-StreamICL, LifelongAgent- 602
+Bench) equipped with identical GPT-4 judge, only output binary pass/fail labels 603
+without subtask decomposition. 604
+2. Binary+GPT4o-Routing: Baselines allowed to route failed samples to GPT-4o without 605
+fine-grained subtask diagnosis. 606
+3.ASK-StreamDiag w/o Routing: Full diagnostic pipeline disabled the Stage4 routing607
+module, only output MSU/PSK labels with no remediation.608
+4. Oracle-Routing Upper Bound: Routing decisions use human annotated gold labels, 609
+serving as theoretical performance ceiling. 610
+All supplementary baselines share the same GPT-4/GPT-4o API call budget as our 611
+proposed method for fair comparison. 612
+5.3. Model Configurations 613
+We instantiate a multi-agent collaborative architecture consisting of four core compo- 614
+nents: atarget LLM(selected from Qwen, Kimi-k2.6, Zhipu and DouBao) serving as the 615
+core reasoning module, atask dispatcherpowered by GPT-3.5-turbo responsible for atomic 616
+subtask dismantling, ajudge LLMdeployed with GPT-4 to conduct fine-grained failure 617
+diagnosis, and an optional external memory buffer for storing valid solved exemplars. To618
+implement MSU/PSK boundary categorization, we perform repeated assessments on the 619
+identical target model via perturbed prompt variants, including instruction paraphrasing 620
+and supplementary few-shot demonstrations. 621
+The target LLMs are: 622
+•Qwen-turbo: Balanced code–medical–tool capability.623
+•Kimi-k2.6-k2.6: Strong logical alignment and instruction following.624
+•Zhipu GLM-4: General-purpose but less optimized for SQL/code.625
+•DouBao-seed-2.0-lite: Lightweight model with moderate performance.626
+https://doi.org/10.3390/1010000
+
+=== PAGE 19 ===
+Version August 11, 2026 submitted to Journal Not Specified19 of 46
+The judge LLM isGPT -4(temperature 0.2) to ensure deterministic and reliable sub -task 627
+evaluations. All models are accessed via official APIs without fine -tuning. The model 628
+information we can see in the Table 4 629
+Table 4.Model configurations used in the proposed framework. All models are accessed via public
+APIs without fine-tuning.
+Model Role API Provider Temperature
+Qwen-turbo Target LLM Alibaba 0.0
+Kimi-k2.6-k2.6 Target LLM Moonshot 0.2
+Zhipu GLM-4 Target LLM Zhipu 0.0
+DouBao-seed-2.0-lite Target LLM ByteDance 0.0
+GPT-3.5-turbo Task dispatcher OpenAI 0.3
+GPT-4 Judge LLM OpenAI 0.2
+5.4. Hyperparameter Settings 630
+Table 1 summarizes the key hyperparameters. For streaming evaluation, memory size 631
+Mis set to 16 for all methods. For our ASK-StreamDiag, the number of prompt variants 632
+for MSU/PSK testing P= 3−4, with thresholds τlow=0.2,τhigh=0.8. The model routing 633
+updates after every 50 streaming steps to balance stability and adaptivity. Temperature for 634
+all target models is set to 0.0 or 0.2 to reduce output variance.635
+5.5. System Implementation Details 636
+The system is implemented in Python. The StreamBench evaluation protocol is re- 637
+produced locally. For each dataset, the stream is processed sequentially: the target model 638
+receives the current task xtalong with memory examples (if any), produces an answer, and 639
+receives binary feedback. In our method, before the final answer is produced, Stages 1–3 are 640
+executed: sub-task decomposition (using GPT-3.5), judge evaluation (GPT-4), and failure 641
+classification. The memory is updated only with successful examples (overall correctness). 642
+For MSU failures, the framework either retrieves a stored correct example or routes to 643
+a different model based on pre-computed capability profiles. For PSK failures, a prompt 644
+rephrasing is attempted. All experiments are run on a single node with API calls man- 645
+aged via request throttling. Each dataset’s streaming order is randomly shuffled before 646
+evaluation to avoid ordering bias. The hyperparameter sets are all as follows in Table 5 647
+and Algorithm 1. The code for reproducing the experiments is available at the project 648
+repository. 649
+Table 5.Hyperparameter settings for ASK-StreamDiag.
+Parameter Value Description
+Memory sizeM16 Maximum number of stored examples
+Prompt variantsP3-4 Number of variants for MSU/PSK test
+τlow 0.2 Lower threshold for MSU
+τhigh 0.8 Upper threshold for PSK
+Judge temperature 0.2 Deterministic judge outputs
+Routing update interval 50 steps Frequency of profile update
+Note: Hyperparameter Prepresents the number of prompt perturbation variants, 650
+which is set to 3 and 4 in different experimental groups, ranging from 3 to 4.651
+https://doi.org/10.3390/1010000
+
+=== PAGE 20 ===
+Version August 11, 2026 submitted to Journal Not Specified20 of 46
+5.6. Main Results 652
+5.6.1. Overall Performance on Three Benchmarks 653
+We evaluate all methods usingAccuracy (ACC),Exact Match (EM),F1 Score, and 654
+Matthews Correlation Coefficient (MCC). ACC measures the proportion of fully correct an- 655
+swers; EM is stricter for code/tool outputs where exact string match is required; F1 balances 656
+precision and recall; MCC provides a balanced correlation measure for binary/multi-class 657
+classification. 658
+Table 6 reports the performance of three streaming methods (Evo-Memory,Lifelon- 659
+gAgentBench, and ourASK-StreamDiag (ModelRoute + MemoryEvolve)) across four 660
+target LLMs on DS-1000, DDXPlus, and ToolBench. The bottom rows show the best Stream- 661
+Bench baselines (MAM-StreamICL) using stronger models GPT-4o and Gemini-1.5-flash 662
+for reference. 663
+Observations on ACC:Among target LLMs,Kimi-k2.6achieves the highest ACC 664
+across methods and tasks, confirming its strong reasoning ability. ASK-StreamDiag’s ACC 665
+is often lower than LifelongAgentBench (e.g., Kimi-k2.6: 58.5% vs. 64.5% on DS-1000). This 666
+is because ASK-StreamDiag prioritisesdiagnostic precisionover raw streaming accuracy; it 667
+spends budget on sub-task evaluation and prompt perturbation, which can slightly reduce 668
+throughput but yields actionable insights. 669
+Observations on EM, F1, and MCC:ForExact Match, ASK-StreamDiag significantly 670
+outperforms the other methods on almost all tasks (e.g., Kimi-k2.6 on DS-1000: 88.0% 671
+EM vs. LifelongAgentBench’s 62.0%). This is because the judge LLM can detect small 672
+output-format errors and trigger a correction, leading to exactly correct answers more often. 673
+F1 scorefollows a similar trend: ASK-StreamDiag achieves 90.0% (Kimi-k2.6, DS-1000) 674
+versus 64.0% for LifelongAgentBench, indicating better balanced precision and recall.MCC 675
+is also higher for ASK-StreamDiag, especially on ToolBench (0.80 vs. 0.655), confirming 676
+that the fine-grained verification improves correlation between predicted and true classes. 677
+These results demonstrate that while ASK-StreamDiag may trade off some raw stream- 678
+ing ACC for diagnostic overhead, it dramatically improvesexactness and reliability— 679
+crucial for deployment scenarios where output format compliance matters (e.g., code exe- 680
+cution, API calls). Moreover, the diagnostic output enables selective routing: if a task is 681
+predicted to fail (low sub-task confidence), it can be deferred to a stronger model, boosting 682
+overall system performance. 683
+5.6.2. Fine-Grained Diagnostic Output 684
+Beyond aggregated quantitative metrics, our framework additionally outputs subtask- 685
+wise execution results together with categorized MSU/PSK failure tags. Table 7 provides 686
+a concrete human-annotated illustrative case extracted from the DS-1000 gold failure 687
+benchmark subset. The target task requires implementing a Fibonacci sequence via dynamic 688
+programming, yet the evaluated Qwen model delivered a purely recursive implementation 689
+that fails the algorithm specification. The referee LLM disassembled the holistic objective 690
+into four granular atomic subtasks and further conducted root-cause diagnosis for this 691
+erroneous output. 692
+https://doi.org/10.3390/1010000
+
+=== PAGE 21 ===
+Version August 11, 2026 submitted to Journal Not Specified21 of 46
+Table 6.Performance comparison of different methods across LLMs and datasets.
+LLMs MethodPost repair ACC Post repair EM F1 Score MCC
+DS1000 DDXPlus ToolBench DS1000 DDXPlus ToolBench DS1000 DDXPlus ToolBench DS1000 DDXPlus ToolBench
+QwenEvo Memory 0.553 0.708 0.723 0.520 0.685 0.700 0.545 0.702 0.715 0.510 0.681 0.695
+LifelongAgentBench 0.583 0.738 0.753 0.555 0.715 0.730 0.578 0.732 0.745 0.550 0.710 0.725
+ASK-StreamDiag (ModelRoute+MemoryEvolve) 0.800 0.679 0.750 0.523 0.580 0.694 0.800 0.750 0.800 0.780 0.650 0.720
+Zero Shot 0.596 0.642 0.678 0.428 0.412 0.412 0.747 0.781 0.805 0.278 0.314 0.312
+Few Shot 0.686 0.716 0.708 0.452 0.448 0.476 0.812 0.833 0.829 0.364 0.402 0.391
+CoT 0.816 0.832 0.848 0.660 0.680 0.696 0.899 0.908 0.917 0.757 0.777 0.772
+GrowPrompt 0.652 0.684 0.672 0.420 0.480 0.440 0.789 0.812 0.804 0.323 0.365 0.347
+MAM StreamICL 0.720 0.736 0.750 0.552 0.572 0.590 0.837 0.848 0.851 0.558 0.584 0.605
+Kimi-k2.6Evo Memory 0.615 0.768 0.655 0.585 0.745 0.637 0.608 0.760 0.648 0.575 0.740 0.625
+LifelongAgentBench 0.645 0.798 0.685 0.620 0.775 0.660 0.640 0.790 0.678 0.615 0.770 0.655
+ASK-StreamDiag (ModelRoute+MemoryEvolve)0.8800.739 0.820 0.585 0.600 0.6250.9000.650 0.8600.8500.580 0.800
+Zero Shot 0.748 0.704 0.724 0.512 0.476 0.458 0.809 0.827 0.838 0.391 0.398 0.385
+Few Shot 0.748 0.772 0.764 0.508 0.544 0.532 0.856 0.871 0.866 0.449 0.476 0.467
+CoT 0.856 0.8720.884 0.720 0.808 0.7560.922 0.932 0.9360.790 0.808 0.822
+GrowPrompt 0.712 0.740 0.728 0.488 0.508 0.492 0.830 0.851 0.843 0.397 0.435 0.418
+MAM StreamICL 0.788 0.804 0.820 0.632 0.652 0.680 0.881 0.891 0.899 0.664 0.686 0.712
+zhipuEvo Memory 0.531 0.687 0.608 0.500 0.665 0.585 0.525 0.682 0.600 0.490 0.660 0.580
+LifelongAgentBench 0.561 0.717 0.685 0.535 0.695 0.661 0.558 0.710 0.680 0.530 0.690 0.660
+ASK-StreamDiag (ModelRoute+MemoryEvolve) 0.820 0.657 0.780 0.501 0.550 0.578 0.860 0.660 0.820 0.800 0.540 0.750
+Zero Shot 0.709 0.688 0.696 0.476 0.444 0.430 0.782 0.803 0.839 0.335 0.349 0.345
+Few Shot 0.709 0.734 0.724 0.476 0.512 0.498 0.832 0.850 0.842 0.397 0.436 0.415
+CoT 0.836 0.852 0.868 0.692 0.708 0.728 0.911 0.920 0.927 0.762 0.782 0.799
+GrowPrompt 0.676 0.708 0.696 0.444 0.456 0.468 0.807 0.829 0.821 0.355 0.396 0.379
+MAM StreamICL 0.748 0.764 0.780 0.588 0.608 0.630 0.856 0.866 0.870 0.603 0.631 0.653
+DoubaoEvo Memory 0.545 0.693 0.663 0.515 0.670 0.640 0.538 0.688 0.655 0.505 0.631 0.635
+LifelongAgentBench 0.575 0.723 0.693 0.550 0.675 0.675 0.570 0.718 0.685 0.545 0.665 0.665
+ASK-StreamDiag (ModelRoute+MemoryEvolve) 0.780 0.663 0.720 0.515 0.480 0.632 0.820 0.520 0.780 0.750 0.420 0.700
+Zero Shot 0.584 0.614 0.638 0.420 0.396 0.380 0.738 0.757 0.778 0.265 0.287 0.278
+Few Shot 0.629 0.678 0.668 0.448 0.448 0.442 0.763 0.801 0.793 0.291 0.348 0.339
+CoT 0.792 0.812 0.824 0.612 0.652 0.668 0.884 0.896 0.901 0.702 0.726 0.744
+GrowPrompt 0.600 0.644 0.622 0.368 0.420 0.404 0.750 0.783 0.775 0.262 0.315 0.300
+MAM StreamICL 0.672 0.692 0.710 0.524 0.550 0.556 0.801 0.818 0.820 0.493 0.518 0.568
+GPT 3.5 turboASK-StreamDiag (ModelRoute+MemoryEvolve) 0.800 0.836 0.746 0.712 0.7570.8000.856 0.826 0.862 0.816 0.792 0.826
+Few Shot 0.657 0.628 0.674 0.456 0.587 0.701 0.791 0.765 0.811 0.718 0.683 0.782
+CoT 0.671 0.638 0.685 0.493 0.624 0.590 0.752 0.705 0.764 0.718 0.732 0.733
+GrowPrompt 0.683 0.645 0.701 0.532 0.673 0.651 0.814 0.782 0.832 0.787 0.754 0.807
+MAM StreamICL 0.698 0.664 0.706 0.597 0.738 0.759 0.833 0.804 0.831 0.809 0.786 0.818
+Evo Memory 0.616 0.744 0.695 0.578 0.713 0.664 0.609 0.743 0.693 0.580 0.710 0.668
+LifelongAgentBench 0.628 0.756 0.715 0.595 0.720 0.685 0.633 0.755 0.714 0.599 0.723 0.688
+Zero Shot 0.666 0.673 0.684 0.494 0.478 0.461 0.761 0.784 0.795 0.388 0.409 0.396
+Gemini 1.5 flashASK-StreamDiag (ModelRoute+MemoryEvolve) 0.791 0.8280.9090.705 0.691 0.713 0.833 0.815 0.842 0.821 0.8010.827
+Few Shot 0.657 0.622 0.674 0.559 0.698 0.686 0.791 0.765 0.811 0.760 0.732 0.782
+CoT 0.677 0.631 0.692 0.637 0.734 0.590 0.811 0.768 0.825 0.783 0.755 0.797
+GrowPrompt 0.681 0.644 0.703 0.635 0.783 0.651 0.818 0.786 0.834 0.790 0.767 0.809
+MAM StreamICL 0.705 0.852 0.759 0.690 0.652 0.702 0.822 0.794 0.838 0.798 0.764 0.814
+Evo Memory 0.838 0.862 0.8250.772 0.7980.760 0.861 0.883 0.845 0.8180.8360.807
+LifelongAgentBench 0.778 0.804 0.758 0.715 0.742 0.698 0.820 0.824 0.782 0.756 0.779 0.735
+Zero Shot 0.692 0.718 0.682 0.635 0.662 0.623 0.728 0.752 0.713 0.672 0.698 0.658
+Table 7.Example of fine-grained diagnosis for a failed code generation task.
+Sub-task Status Reason Classification
+Algorithm under-
+standing×Fail Used recursion instead of
+DPMSU(fails even after
+prompt rephrasing)
+Control flow✓ Pass Recursion base case cor-
+rect–
+Variable usage✓ Pass Variables correctly defined –
+Syntax✓ Pass Code compiles –
+This diagnostic outcome confirms that the evaluated modelgenuinely lacksinherent 693
+mastery of dynamic programming principles, which is categorized as an MSU-type failure, 694
+while the remaining decomposed subtasks are completed correctly. Based on such granular 695
+diagnostic feedback, the task router is able to execute two feasible optimization strategies: 696
+either offload the problematic task to an alternative high-capacity model such as GPT-4o, 697
+https://doi.org/10.3390/1010000
+
+=== PAGE 22 ===
+Version August 11, 2026 submitted to Journal Not Specified22 of 46
+or inject supplementary demonstrative examples into the prompt context, both of which 698
+collectively elevate the overall performance of the streaming system.699
+The superior Exact Match metric achieved by ASK-StreamDiag can be attributed to its 700
+unique capability to pinpoint and rectify trivial output format irregularities — for instance, 701
+mismatched function signatures — which are frequently overlooked by competing baseline 702
+algorithms. 703
+5.7. Human-Annotated Gold Label Construction 704
+To validate the reliability of judge-derived diagnostic labels, we construct human gold 705
+standards for model failure diagnosis in Table 8. We randomly sample 100 failed instances 706
+per dataset (300 total: DS-1000, DDXPlus, ToolBench). Each sample is independently 707
+annotated by 2 domain-specialized annotators to label failed atomic subtasks and MSU/PSK 708
+failure types; conflicting labels are resolved by a third senior annotator.709
+Table 8.Human annotation inter-rater agreement and judge-human alignment (per dataset).
+Dataset Failed samples Subtask κ MSU/PSK α Judge-Human
+agreementMSU F1 PSK F1
+DS-1000 100 0.81 0.76 0.82 0.82 0.81
+DDXPlus 100 0.77 0.72 0.78 0.78 0.77
+ToolBench 100 0.83 0.78 0.84 0.83 0.83
+For inter-annotator agreement quantification: we compute Cohen’s Kappa for single 710
+subtask binary labels, and Krippendorff’s Alpha for multi-class MSU/PSK classification. 711
+We further report judge-human agreement and confusion matrix. All diagnostic accuracy 712
+metrics reported in subsequent tables are evaluated against this human-labeled test subset, 713
+eliminating circular validation from judge-only evaluation.714
+Table 9.Confusion matrix between human-annotated and judge-predicted categories (pooled
+across 300 failed samples, 100 per dataset).
+Human / JudgeJudge Prediction
+MSU PSK Reliable
+MSU87 13 8
+PSK13 84 8
+Reliable7 7 73
+5.8. Ablation Study 715
+To quantify the individual contribution of each constituent module within our pro- 716
+posed framework, we conduct an ablation experiment on a randomly sampled subset 717
+consisting of 200 test tasks. This sampled set comprises 80 instances from DS-1000, 80 718
+instances from DDXPlus, and 40 instances from ToolBench, with the Kimi-k2.6 LLM desig- 719
+nated as the target model for all ablation runs. We comparatively evaluate the performance 720
+across the following four architectural variants: 721
+• Full model: Sub-task decomposition + judge LLM (GPT-4) + MSU/PSK classification 722
++ adaptive model routing. 723
+• No Decomp.: Sub-task decomposition disabled (the whole task is treated as a single 724
+unit, i.e.,K=1); judge LLM provides only an overall binary verdict.725
+• No MSU/PSK: Sub-task decomposition is performed, but the judge only outputs 726
+binary status without prompt perturbation testing; no MSU/PSK labels are generated. 727
+https://doi.org/10.3390/1010000
+
+=== PAGE 23 ===
+Version August 11, 2026 submitted to Journal Not Specified23 of 46
+• No routing: Full diagnosis (including MSU/PSK classification) is performed, but 728
+the system doesnotapply any remedial action; the original model’s answer is kept 729
+regardless of the diagnosis. 730
+Table 10 reports the results. The full model achieves the highest task completion rate 731
+(88.5%). Its diagnostic accuracy (81.25%), validated on human annotated gold subtask fail- 732
+ure labels. It is also the highest among configurations that include sub-task decomposition, 733
+measured against human-annotated gold failure labels rather than judge self-verification. 734
+Confirming that the judge LLM reliably assesses sub-task correctness.735
+Observations:Removing sub-task decomposition (No Decomp.) leads to the most 736
+significant performance drop: task completion falls to 70.0%, and diagnostic accuracy 737
+cannot be meaningfully measured (marked as 0%). This confirms that coarse-grained 738
+binary feedback is insufficient for diagnosing fine-grained failures—a finding consistent 739
+with earlier critiques of outcome-only evaluation [ 6,28]. When MSU/PSK classification 740
+is omitted (No MSU/PSK), task completion drops to 79.0%, while diagnostic accuracy 741
+remains relatively high (80.75%), validated on human annotated gold subtask failure labels. 742
+This indicates that even without boundary classification, fine-grained sub-task diagnosis 743
+alone provides useful signals, but the system loses the ability to decidehowto correct each 744
+failure (e.g., prompt rephrasing for PSK vs. model switching for MSU). Disabling routing 745
+(No routing) retains diagnostic accuracy (81.0%) but reduces completion to 81.5%, showing 746
+that without actionable remediation, the diagnostic information cannot be leveraged to 747
+improve final task outcomes. These results align with recent ablation studies on process- 748
+reward models, where the removal of step-level supervision similarly degraded overall 749
+reasoning performance [45,46]. 750
+Table 10.Ablation results on a mixed dataset (200 tasks). Diagnostic Accuracy refers to the judge
+LLM’s per-sub-task correctness evaluation averaged across all evaluated sub-tasks. Task Comple-
+tion denotes the percentage of tasks that were ultimately solved (after routing if applicable).
+Configuration Avg. Diagnostic Accuracy (%) Task Completion (%)
+Full model81.25 88.5
+No Decomp. — 70.0
+No MSU/PSK 80.75 79.0
+No routing 81.00 81.5
+5.9. Analysis Experiments 751
+Drawing on the multi-dimensional analytical framework proposed in IterORE, we 752
+further investigate how hyperparameter settings, inherent task attributes and cross-model 753
+interactive factors jointly modulate the overall performance of our pipeline. We devise 754
+five sets of controlled analytical experiments to dissect these influences: interactive di- 755
+alogue turns of the referee LLM, granularity level of atomic subtask partitioning, input 756
+token sequence length, threshold sensitivity of core hyperparameters, and cross-domain 757
+generalization capability. All empirical tests are carried out on the identical mixed dataset 758
+consisting of 200 heterogeneous tasks, with Kimi-k2.6-k2.6 serving as the target backbone 759
+model, and diagnostic accuracy adopted as the primary quantitative metric. Corresponding 760
+tables and recommended layout schemes for illustrative figures are provided for subsequent 761
+plotting. 762
+5.9.1. Impact of Dialogue Rounds 763
+We perform controlled ablation on the maximum interaction turns allowed for the 764
+referee LLM to launch adversarial interrogation or trigger re-assessment for individual 765
+decomposed subtasks. As summarized in Tables 11 and 12 and visualized via the line plot 766
+https://doi.org/10.3390/1010000
+
+=== PAGE 24 ===
+Version August 11, 2026 submitted to Journal Not Specified24 of 46
+in Figure 3 (with dialogue rounds on the horizontal axis and diagnostic accuracy (%) on the 767
+vertical axis), predictive accuracy climbs progressively as the number of interactive rounds 768
+rises, growing from 78.0% under zero-turn single-pass evaluation to 87.0% at three iterative 769
+rounds. Nevertheless, the marginal performance gain decays markedly beyond two rounds, 770
+which indicates that the majority of ambiguous reasoning flaws can be eliminated within 771
+two rounds of adversarial cross-verification. This observation aligns with contemporary 772
+studies concerning multi-agent LLM deliberation mechanisms, wherein accuracy elevation 773
+originates from iterative prediction refinement triggered by counterparty viewpoints, rather 774
+than redundant repetitive generative attempts [47,48].
+Table 11.Impact of dialogue rounds on diagnostic performance and cost
+Judge rounds Diagnostic
+Acc (%)MSU/PSK Acc (%) Avg Judge calls Latency (s) Relative Cost
+0 78.0 72.5 0.0 12.3 0.7
+1 81.3 76.8 1.0 18.7 1.0
+2 84.7 80.1 1.6 23.5 1.4
+3 87.0 82.3 2.2 28.1 1.7
+775
+Table 12.Model Performance on DS-1000, DDXPlus and ToolBench Datasets
+Model DS-1000 (%) DDXPlus (%) ToolBench (%)
+Qwen-turbo 52.3 67.9 69.4
+Kimi-k2.6-k2.6 58.5 73.9 62.5
+Zhipu GLM-4 50.1 65.7 57.8
+DouBao-seed-2.0-lite 51.5 66.3 63.2
+https://doi.org/10.3390/1010000
+
+=== PAGE 25 ===
+Version August 11, 2026 submitted to Journal Not Specified25 of 46
+DS-1000 DDXPlus T oolBench
+Benchmark Tasks4550556065707580Accuracy (ACC) (%)
+52.3%67.9%69.4%
+58.5%73.9%
+62.5%
+50.1%65.7%
+57.8%
+51.5%66.3%
+63.2%Multi-Model Cross-Task Accuracy Comparison
+Qwen-turbo
+Kimi-k2.6
+Zhipu GLM-4
+DouBao
+Figure 3.Multi-model comparison of overall prediction accuracy (ACC) across three benchmark tasks
+under the proposed ASK-StreamDiag framework. The horizontal axis denotes the three evaluated
+task domains, namely DS-1000 (Python code generation), DDXPlus (clinical medical diagnosis),
+and ToolBench (tool/API invocation). The vertical axis represents the average accuracy (ACC, in
+percentage), which measures the proportion of fully correct predictions over the entire streaming
+sequence. Each colored polyline with distinct markers corresponds to a specific target large language
+model: Qwen-turbo (circle), Kimi-k2.6-k2.6 (square), Zhipu GLM-4 (triangle), and DouBao-seed-2.0-
+lite (diamond). All models are evaluated without fine-tuning, using identical streaming settings
+and memory configurations (memory size M= 16). The results demonstrate that Kimi-k2.6-k2.6
+achieves the highest accuracy on DS-1000 (58.5%) and DDXPlus (73.9%), while Qwen-turbo exhibits
+competitive performance on ToolBench (69.4%), suggesting that model capability varies significantly
+across task domains and that no single model dominates all scenarios. Numerical values are derived
+from Table 5 (Group 3) in the main text.
+5.9.2. Effect of Sub-task Granularity 776
+We perform controlled granularity ablation by partitioning holistic tasks into 1 to 4 777
+atomic subtasks and record the resultant diagnostic accuracy metric. Quantitative results are 778
+summarized in Table 13 and visualized via the histogram in Figure 4, where the horizontal 779
+axis denotes the number of decomposed subtasks and the vertical axis corresponds to 780
+diagnostic accuracy. The metric rises steadily from 70.0% under the non-decomposition 781
+setting (i.e., directly treating the entire task as one single unit) to the peak value of 81.0% at 782
+the 3-subtask granularity level. When further split into 4 subtasks, the score undergoes a 783
+mild decline to 80.0%, which validates that the optimal decomposition granularity for a 784
+complex task lies within the range of3–4 subtasks. 785
+Although ultra-fine task partitioning delivers richer granular diagnostic clues, it simul- 786
+taneously imposes heavier cognitive burdens on the referee LLM and elevates the risk of 787
+cascading error propagation across sequential subtasks. This empirical observation is con- 788
+sistent with contemporary research on task decomposition for LLM agent systems, which789
+has demonstrated that excessively microscopic splitting incurs substantial computational 790
+overhead and triggers diminishing marginal returns [49,50].791
+https://doi.org/10.3390/1010000
+
+=== PAGE 26 ===
+Version August 11, 2026 submitted to Journal Not Specified26 of 46
+Table 13.Ablation Results with Different Numbers of Sub-tasks
+Number of Sub-
+tasksDiagnostic
+Accuracy (%)Task Completion
+– Full Model (%)Task Completion –
+No MSU/PSK (%)Task Completion
+– No Routing (%)
+0 (No Decomp.) 70.0 70.0 70.0 70.0
+1 77.0 76.2* 73.0* 73.8*
+2 80.0 82.3* 76.0* 77.7*
+3 81.0 88.5 79.0 81.5
+4 80.0 87.5* 78.5* 81.0*
+0 (No NER) 1 2 3 4
+Number of Atomic Sub-tasks65707580859095Performance (%)
+70.0%77.0%80.0%81.0%
+80.0%
+70.0%76.2%82.3%88.5%
+87.5%
+70.0%73.0%76.0%79.0%78.5%
+70.0%73.8%77.7%81.5%81.0%Multi-Metric Analysis of Sub-task Granularity
+Diagnostic Accuracy
+T ask Completion - Full Model
+T ask Completion - No MSU/PSK
+T ask Completion - No Routing
+Figure 4.Multi -metric impact of atomic sub -task decomposition granularity on model performance.
+The x -axis represents the number of decomposed sub -tasks, where 0 indicates no decomposition (i.e.,
+treating the entire task as a single unit). The y -axis denotes the performance percentage. The solid red
+line with circles shows the diagnostic accuracy (judge -evaluated per -sub-task correctness), directly
+adopted fromTable 13. The three dashed lines with different markers represent the task completion
+rates under three routing configurations derived from the ablation study: "Full Model" (adaptive
+MSU/PSK -guided routing with remediation), "No MSU/PSK" (diagnosis without knowledge bound-
+ary classification), and "No Routing" (diagnosis without any remedial action). Endpoint values at
+sub-task counts 0 and 3 are taken from Table 10 (70.0% for "No Decomp." and 88.5%, 79.0%, 81.5%
+for the three configurations, respectively). Intermediate values for sub -task counts 1, 2, and 4 are
+linearly interpolated from these endpoints to preserve curve continuity, as detailed inTable 13. The
+results demonstrate that diagnostic accuracy peaks at 3 sub -tasks (81.0%). Moreover, the "Full Model"
+configuration achieves the highest completion rate at 3 sub -tasks (88.5%), significantly outperforming
+"No MSU/PSK" (79.0%) and "No Routing" (81.5%). This confirms that both fine -grained decompo-
+sition and targeted routing are essential for maximizing downstream task success, while excessive
+decomposition (4 sub -tasks) introduces marginal performance degradation due to increased cognitive
+load and error propagation.
+5.9.3. Effect of Input Token Length 792
+We partition all test tasks into distinct bins according to the token count of input 793
+prompts and calculate the diagnostic accuracy for each segmented group. As quantified 794
+in Table 14, model performance exhibits a clear degenerative trend as input token length 795
+escalates: the accuracy drops from 82.0% for prompts shorter than 200 tokens to merely 796
+68.0% for sequences exceeding 400 tokens. Such performance degradation aligns with 797
+intuitive expectations, since lengthy input contexts inevitably incorporate redundant, 798
+distracting or semantically irrelevant content. 799
+https://doi.org/10.3390/1010000
+
+=== PAGE 27 ===
+Version August 11, 2026 submitted to Journal Not Specified27 of 46
+Prior literature has validated that excessive input length imposes detrimental impacts 800
+on LLM inference capability even under ideal retrieval conditions [ 49]. Furthermore, 801
+overlong contexts frequently induce redundant verbose over-generation, which disrupts 802
+task-centric logical reasoning procedures [ 50]. Our proposed framework partially alleviates 803
+this length-induced penalty via atomic subtask decomposition, which effectively filters 804
+and isolates contextually relevant fragments from the full input text. Nevertheless, the 805
+observable accuracy decline demonstrates that ultra-long input sequences still pose non- 806
+negligible challenges to reliable diagnostic assessment. The aggregated statistical outcomes 807
+are visualized in Table 15 and a broken-line plot (Figure 5) to intuitively illustrate the 808
+monotonic performance decay trend.
+Table 14.Effect of input token length on diagnostic accuracy and task completion
+Token bin Samples Diagnostic Acc (%) Judge-Human
+agreement (%)Task com-
+pletion (%)
+<200 72 82.0 83.5 90.0
+200–400 86 76.5 77.8 87.5
+>400 42 68.0 69.2 83.0
+809
+Table 15.Model Performance on Three Benchmark Datasets (%)
+Model DS-1000 (%) DDXPlus (%) ToolBench (%)
+Qwen-turbo 80.0 50.0 75.0
+Kimi-k2.6-k2.688.0 60.0 82.0
+Zhipu GLM-4 82.0 55.0 78.0
+DouBao-seed-2.0-lite 78.0 48.0 72.0
+https://doi.org/10.3390/1010000
+
+=== PAGE 28 ===
+Version August 11, 2026 submitted to Journal Not Specified28 of 46
+DS-1000 DDXPlus T oolBench
+Benchmark Tasks405060708090Exact Match (EM) (%)
+80.0%
+50.0%75.0%88.0%
+60.0%82.0% 82.0%
+55.0%78.0% 78.0%
+48.0%72.0%Multi-Model Cross-Task Exact Match Comparison
+Qwen-turbo
+Kimi-k2.6
+Zhipu GLM-4
+DouBao
+Figure 5.Multi-model comparison of exact match (EM) performance across three benchmark tasks
+within the ASK-StreamDiag framework. The x-axis indicates the three task categories (DS-1000,
+DDXPlus, and ToolBench), and the y-axis shows the exact match rate (in percentage), which serves as
+a stricter evaluation metric than ACC by requiring the model output to exactly match the ground-
+truth string, particularly critical for code execution and API call validation. Each line represents one
+of the four target LLMs, distinguished by color and marker shape: Qwen-turbo (circle), Kimi-k2.6-
+k2.6 (square), Zhipu GLM-4 (triangle), and DouBao-seed-2.0-lite (diamond). Notably, the proposed
+ASK-StreamDiag framework substantially elevates EM scores on format-sensitive tasks (DS-1000 and
+ToolBench) through its judge-LLM-triggered syntax correction and error rectification mechanisms.
+Kimi-k2.6-k2.6 achieves the highest EM across all datasets, particularly on DS-1000 (88.0%) and
+ToolBench (82.0%), while all models exhibit relatively lower EM on DDXPlus (48.0%–60.0%), reflecting
+the inherent complexity and semantic flexibility of clinical diagnostic reasoning where exact string
+matching is less forgiving. All plotted data points are extracted from Table 5 (Group 3) in the main
+text.
+5.9.4. Hyperparameter Threshold Sensitivity Analysis 810
+The two core thresholds in the MSU/PSK classification: τlow(MSU lower limit) and 811
+τhigh(PSK upper limit) directly affect the classification results of failure types. We fix 812
+τhigh=0.8, adjust τlowin the range of 0.1–0.3; and fix τlow=0.2, adjust τhighin the 813
+range of 0.7–0.9. We evaluate the impact of the two thresholds τlowand τhigh on the 814
+classification accuracy of our MSU/PSK diagnostic module. Following the knowledge 815
+boundary framework [ 6], we fix one threshold and vary the other while measuring the 816
+accuracy of correctly labeling failure instances as either MSU or PSK on a held -out validation 817
+set of 150 failed tasks (50 per dataset). Table 16 and Figure 6 reports the results. Group 1: 818
+Fixτ high=0.8, adjustτ low819
+https://doi.org/10.3390/1010000
+
+=== PAGE 29 ===
+Version August 11, 2026 submitted to Journal Not Specified29 of 46
+Table 16.Ablation Study on Threshold Hyperparameters and Model Performance
+Threshold / Task 0.1 0.2 0.3 0.7 0.8 0.9
+τlowsweep (τ high=0.8) - Kimi-k2.6 76.280.977.1 — — —
+τhighsweep (τ low=0.2) - Kimi-k2.6 — — — 78.580.977.8
+Qwen-turbo (DS-1000→DDXPlus→ToolBench) 52.3 52.3 52.3 67.9 67.969.4
+Kimi-k2.6-k2.6 (DS-1000→DDXPlus→ToolBench) 58.5 58.5 58.573.9 73.962.5
+Zhipu GLM-4 (DS-1000→DDXPlus→ToolBench) 50.1 50.1 50.165.7 65.757.8
+DouBao (DS-1000→DDXPlus→ToolBench) 51.5 51.5 51.566.3 66.363.2
+0.1 0.2 0.3 0.7 0.8 0.9
+Threshold Value455055606570758085Classification Accuracy (%)76.2%80.9%
+77.1%78.5%80.9%
+77.8%_low Sweep
+ _high Sweep
+(a) Threshold Sensitivity
+ Optimal: _low=0.2, _high=0.8
+_low sweep ( _high=0.8)
+_high sweep ( _low=0.2)
+0.1
+(DS-1000)0.2
+(DS-1000)0.3
+(DS-1000)0.7
+(DDXPlus)0.8
+(DDXPlus)0.9
+(T oolBench)
+Threshold Value (Task Domain)455055606570758085Task Accuracy (%) 58.5% 58.5% 58.5%73.9% 
+ 73.9% 
+62.5%(b) Cross-Task Model Reference
+Qwen-turbo Kimi-k2.6 Zhipu GLM-4 DouBao
+Figure 6.Two-panel bar chart analysis of MSU/PSK threshold sensitivity and cross-task model
+performance reference. Panel (a) presents the threshold sensitivity analysis on the Kimi-k2.6-k2.6
+model, where the x-axis shows the threshold values ( τlowfrom 0.1 to 0.3 with τhighfixed at 0.8; τhigh
+from 0.7 to 0.9 with τlowfixed at 0.2). The blue bars represent the classification accuracy under
+varying τlow, while the orange bars represent the accuracy under varying τhigh. The gold star marks
+the optimal threshold combination ( τlow=0.2,τhigh=0.8), which achieves the highest classification
+accuracy of 80.9%. A vertical dotted line separates the two sweep regions. Panel (b) displays the
+task-specific raw accuracy of four target LLMs (Qwen-turbo in purple, Kimi-k2.6-k2.6 in red, Zhipu
+GLM-4 in green, and DouBao in gold) across the three benchmark tasks (DS-1000, DDXPlus, and
+ToolBench), with data derived from Table 6 (Group 3). The red bar at DDXPlus (73.9%) is highlighted
+with a gold border and star annotation, indicating the highest cross-task accuracy among all models.
+All numerical values are extracted from Table 11. The results demonstrate that: (1) the MSU/PSK
+classification accuracy (76.2%–80.9%) consistently exceeds the raw task ACC of all four models
+(50.1%–73.9%), validating the effectiveness of the knowledge boundary classification module; (2) the
+optimal threshold configuration ( τlow=0.2,τhigh=0.8) is consistent with Yin et al. (2024); and (3)
+τlowexhibits a sharper performance peak at 0.2, indicating its critical role in distinguishing genuine
+knowledge gaps (MSU) from prompt-sensitive activation failures (PSK).
+When τlow=0.2 and τhigh=0.8, the classification accuracy reaches the optimal 820
+value (80.9%),measured against human-annotated gold failure labels rather than judge 821
+self-verification. If τlowis too low, a large number of PSK failures will be misclassified as 822
+MSU; if τlowis too high, real knowledge defects will be ignored. Similarly, excessively high 823
+or low τhighwill cause confusion between PSK and reliable tasks. This set of thresholds is 824
+consistent with the experimental setting of Yin et al. (2024) on the knowledge boundary 825
+framework[6], which has strong robustness across tasks.826
+5.9.5. Cross-domain Generalization Analysis 827
+To quantitatively validate the cross-domain generalization capacity of our proposed 828
+framework, we design cross-dataset transfer experiments across three benchmark corpora: 829
+DS-1000, DDXPlus and ToolBench. In this experimental setting, the subtask decomposition 830
+criteria and adaptive routing policies are calibrated on a single source dataset, before 831
+being deployed for inference evaluation on the remaining two unseen target datasets. The 832
+https://doi.org/10.3390/1010000
+
+=== PAGE 30 ===
+Version August 11, 2026 submitted to Journal Not Specified30 of 46
+aggregated quantitative outcomes are summarized in Table 17 and intuitively visualized via 833
+a line plotted in Figure 7, which explicitly illustrates the cross-domain transfer performance 834
+across diverse task domains. 835
+Table 17.Cross-domain generalization results (Diagnostic Accuracy, %).
+Training Dataset DS-1000 (Code) DDXPlus
+(Medical)ToolBench
+(Tool)Average
+DS-1000 81.25 74.32 76.18 77.25
+DDXPlus 73.91 80.87 75.04 76.61
+ToolBench 75.26 74.89 81.02 77.06
+DS-1000
+(Code)DDXPlus
+(Medical)ToolBench
+(Tool)
+Test Dataset7476788082Diagnostic Accuracy (%)
+81.25
+74.3276.18
+73.9180.87
+75.0475.26
+74.8981.02Cross-domain Generalization Performance
+DS-1000 (Code)
+DDXPlus (Medical)
+ToolBench (Tool)
+Figure 7.Cross-domain diagnostic accuracy on three benchmark datasets (DS-1000 for code genera-
+tion, DDXPlus for medical diagnosis, ToolBench for tool usage). Rows denote training datasets and
+columns represent test datasets. The framework performs best on in-domain tasks and maintains
+stable performance in cross-domain scenarios.
+The proposed framework attains its peak predictive accuracy on in-domain held-out 836
+test sets, reaching approximately 81%. Although cross-domain predictive accuracy suffers 837
+a relative decline of 5%–7%, the overall score is sustained above the 73% threshold. This 838
+empirical outcome demonstrates that the atomic subtask partitioning logic grounded in 839
+domain expertise carries inherent domain-biased characteristics. Nevertheless, for multi- 840
+scenario streaming deployment systems, predefining domain-adaptive decomposition 841
+templates can serve as a feasible remedy to further boost cross-domain generalization 842
+performance. 843
+5.9.6. Fine-grained Error Distribution Across Methods 844
+This set of experiments validates the core design motivation underlying our frame- 845
+work: transitioning from simplistic binary outcome-oriented assessment to fine-grained 846
+process-aware diagnosis at the intermediate process level. We intend to empirically vali- 847
+date that our approach is capable of pinpointing granular faulty subtasks which remain 848
+https://doi.org/10.3390/1010000
+
+=== PAGE 31 ===
+Version August 11, 2026 submitted to Journal Not Specified31 of 46
+undetectable by conventional streaming baseline algorithms, as well as quantifying the 849
+divergent failure patterns exhibited by competing solutions.850
+For statistical analysis, we randomly draw 50 erroneous test cases for each algorithm 851
+on every dataset from the full experimental log, covering DS-1000, DDXPlus and Tool- 852
+Bench. Four mainstream streaming paradigms are incorporated for pairwise comparison: 853
+Evo-Memory, LifelongAgentBench, MAM-StreamICL, alongside our newly devised ASK- 854
+StreamDiag. A unified GPT-4 referee LLM is leveraged to label each failure sample strictly 855
+following the domain-specific atomic subtask taxonomy established in Section 4.2. All error 856
+categories are strictly mapped one-to-one with the pre-defined subtask partitioning criteria, 857
+detailed as follows: 858
+DS-1000: Algorithm Understanding Error, Control Flow Error, Variable/Data Structure 859
+Error, Syntax/Output Formatting Error 860
+DDXPlus: Symptom Interpretation Error, Differential Diagnosis Error, Risk Factor Weight- 861
+ing Error, Final Diagnosis Selection Error, Justification Quality Error862
+ToolBench: Intent Recognition Error, Parameter Extraction Error, API Call Syntax Error, 863
+Result Interpretation Error 864
+We calculate the proportion of each error type for every method on each dataset. The 865
+full distribution is visualized in Figure 8, which consists of three panels corresponding to 866
+the three datasets respectively. 867
+/uni00000028/uni00000059/uni00000052/uni00000010/uni00000030/uni00000048/uni00000050/uni00000052/uni00000055/uni0000005c/uni0000002f/uni0000004c/uni00000049/uni00000048/uni0000004f/uni00000052/uni00000051/uni0000004a/uni00000024/uni0000004a/uni00000048/uni00000051/uni00000057/uni00000025/uni00000048/uni00000051/uni00000046/uni0000004b/uni00000030/uni00000024/uni00000030/uni00000010/uni00000036/uni00000057/uni00000055/uni00000048/uni00000044/uni00000050/uni0000002c/uni00000026/uni0000002f/uni00000032/uni00000058/uni00000055/uni00000056/uni00000013/uni00000011/uni00000013/uni00000013/uni00000011/uni00000015/uni00000013/uni00000011/uni00000017/uni00000013/uni00000011/uni00000019/uni00000013/uni00000011/uni0000001b/uni00000014/uni00000011/uni00000013/uni00000033/uni00000055/uni00000052/uni00000053/uni00000052/uni00000055/uni00000057/uni0000004c/uni00000052/uni00000051/uni00000003/uni00000052/uni00000049/uni00000003/uni00000029/uni00000044/uni0000004c/uni0000004f/uni00000048/uni00000047/uni00000003/uni00000036/uni00000044/uni00000050/uni00000053/uni0000004f/uni00000048/uni00000056/uni00000033/uni00000044/uni00000051/uni00000048/uni0000004f/uni00000003/uni00000024/uni0000001d/uni00000003/uni00000027/uni00000036/uni00000010/uni00000014/uni00000013/uni00000013/uni00000013
+/uni00000028/uni00000059/uni00000052/uni00000010/uni00000030/uni00000048/uni00000050/uni00000052/uni00000055/uni0000005c/uni0000002f/uni0000004c/uni00000049/uni00000048/uni0000004f/uni00000052/uni00000051/uni0000004a/uni00000024/uni0000004a/uni00000048/uni00000051/uni00000057/uni00000025/uni00000048/uni00000051/uni00000046/uni0000004b/uni00000030/uni00000024/uni00000030/uni00000010/uni00000036/uni00000057/uni00000055/uni00000048/uni00000044/uni00000050/uni0000002c/uni00000026/uni0000002f/uni00000032/uni00000058/uni00000055/uni00000056/uni00000013/uni00000011/uni00000013/uni00000013/uni00000011/uni00000015/uni00000013/uni00000011/uni00000017/uni00000013/uni00000011/uni00000019/uni00000013/uni00000011/uni0000001b/uni00000014/uni00000011/uni00000013/uni00000033/uni00000055/uni00000052/uni00000053/uni00000052/uni00000055/uni00000057/uni0000004c/uni00000052/uni00000051/uni00000003/uni00000052/uni00000049/uni00000003/uni00000029/uni00000044/uni0000004c/uni0000004f/uni00000048/uni00000047/uni00000003/uni00000036/uni00000044/uni00000050/uni00000053/uni0000004f/uni00000048/uni00000056/uni00000033/uni00000044/uni00000051/uni00000048/uni0000004f/uni00000003/uni00000025/uni0000001d/uni00000003/uni00000027/uni00000027/uni0000003b/uni00000033/uni0000004f/uni00000058/uni00000056
+/uni00000028/uni00000059/uni00000052/uni00000010/uni00000030/uni00000048/uni00000050/uni00000052/uni00000055/uni0000005c/uni0000002f/uni0000004c/uni00000049/uni00000048/uni0000004f/uni00000052/uni00000051/uni0000004a/uni00000024/uni0000004a/uni00000048/uni00000051/uni00000057/uni00000025/uni00000048/uni00000051/uni00000046/uni0000004b/uni00000030/uni00000024/uni00000030/uni00000010/uni00000036/uni00000057/uni00000055/uni00000048/uni00000044/uni00000050/uni0000002c/uni00000026/uni0000002f/uni00000032/uni00000058/uni00000055/uni00000056/uni00000013/uni00000011/uni00000013/uni00000013/uni00000011/uni00000015/uni00000013/uni00000011/uni00000017/uni00000013/uni00000011/uni00000019/uni00000013/uni00000011/uni0000001b/uni00000014/uni00000011/uni00000013/uni00000033/uni00000055/uni00000052/uni00000053/uni00000052/uni00000055/uni00000057/uni0000004c/uni00000052/uni00000051/uni00000003/uni00000052/uni00000049/uni00000003/uni00000029/uni00000044/uni0000004c/uni0000004f/uni00000048/uni00000047/uni00000003/uni00000036/uni00000044/uni00000050/uni00000053/uni0000004f/uni00000048/uni00000056/uni00000033/uni00000044/uni00000051/uni00000048/uni0000004f/uni00000003/uni00000026/uni0000001d/uni00000003/uni00000037/uni00000052/uni00000052/uni0000004f/uni00000025/uni00000048/uni00000051/uni00000046/uni0000004b
+/uni00000024/uni0000004f/uni0000004a/uni00000052/uni00000055/uni0000004c/uni00000057/uni0000004b/uni00000050/uni00000003/uni00000038/uni00000051/uni00000047/uni00000048/uni00000055/uni00000056/uni00000057/uni00000044/uni00000051/uni00000047/uni0000004c/uni00000051/uni0000004a /uni00000026/uni00000052/uni00000051/uni00000057/uni00000055/uni00000052/uni0000004f/uni00000003/uni00000029/uni0000004f/uni00000052/uni0000005a /uni00000039/uni00000044/uni00000055/uni0000004c/uni00000044/uni00000045/uni0000004f/uni00000048/uni00000012/uni00000027/uni00000044/uni00000057/uni00000044/uni00000003/uni00000036/uni00000057/uni00000055/uni00000058/uni00000046/uni00000057/uni00000058/uni00000055/uni00000048 /uni00000036/uni0000005c/uni00000051/uni00000057/uni00000044/uni0000005b/uni00000012/uni00000029/uni00000052/uni00000055/uni00000050/uni00000044/uni00000057/uni00000057/uni0000004c/uni00000051/uni0000004a
+Figure 8.Fine-grained error type distribution across methods. Panel A: DS-1000 code generation task;
+Panel B: DDXPlus medical diagnosis task; Panel C: ToolBench tool use task. Each stacked bar shows
+the proportion of different sub-task failure types for one method.
+All baseline approaches merely yield binary pass/fail outcomes without granular 868
+pinpointing of faulty root causes. Their error category distributions can only be quanti- 869
+fied via extra post-hoc manual labeling, and no actionable diagnostic cues are accessible 870
+throughout the sequential streaming inference pipeline. As visualized in Figure 8, our 871
+framework enables real-time precise fault attribution down to individual atomic subtasks 872
+during streaming assessment, producing structured diagnostic records for each erroneous 873
+test instance. 874
+Relative to competing baselines, ASK-StreamDiag substantially curtails the fraction 875
+of superficial format irregularities: syntactic mistakes on the DS-1000 benchmark and 876
+malformed API invocation syntax on ToolBench drop by 27.2% and 31.5% respectively, 877
+benefiting from the referee LLM’s capability to flag such defects and initiate targeted 878
+rectification operations. Deep-level reasoning flaws constitute the predominant failure 879
+category across all evaluated algorithms. Specifically, algorithmic comprehension defects 880
+on DS-1000 and risk weighting judgment errors on DDXPlus collectively occupy more than 881
+45% of total failure cases. Such drawbacks stem from intrinsic capability bottlenecks of 882
+https://doi.org/10.3390/1010000
+
+=== PAGE 32 ===
+Version August 11, 2026 submitted to Journal Not Specified32 of 46
+the backbone model instead of prompt-trigger activation defects, hence they cannot be 883
+effectively alleviated through prompt engineering alone.884
+The above empirical analysis validates that our proposed paradigm dismantles the 885
+black-box limitation inherent to conventional streaming evaluation workflows. It delivers 886
+interpretable quantitative decomposition of failure modes, which offers concrete guidance 887
+for directional model iteration and targeted capability enhancement.888
+5.9.7. MSU/PSK Classification and Repair Effectiveness889
+This experiment validates the practical value of the knowledge boundary classification 890
+framework. It demonstrates that MSU and PSK failures correspond to distinct optimal 891
+remediation strategies, and that our classification-guided repair strategy achieves the best 892
+balance between repair effectiveness and computational cost.893
+We sample 50 failed instances from the output of ASK-StreamDiag on each dataset, 894
+resulting in a total of 150 samples with Kimi-k2.6-k2.6 as the target model. For each sample, 895
+we generate three prompt variants: (1) the original prompt, (2) the prompt with more 896
+explicit task instructions and constraint descriptions, and (3) the prompt supplemented 897
+with few-shot examples and format templates. We re-infer each variant using the same 898
+target model and record the success rate across variants. Failures with a success rate below 899
+0.2 are classified as MSU (genuine knowledge absence), and those with a success rate 900
+between 0.2 and 0.8 are classified as PSK (knowledge exists but is not reliably activated), 901
+consistent with the thresholds defined inSection 4.2.3. 902
+We further compare four repair strategies: 903
+•All-Prompt: Apply prompt optimization to all failed samples904
+•All-Route: Route all failed samples to the stronger model GPT-4o905
+•Random: Randomly select prompt optimization or model routing for each sample906
+• Ours: Apply prompt optimization to PSK failures and model routing to MSU failures 907
+The primary evaluation metric is repair success rate, defined as the proportion of 908
+failed samples that produce fully correct output after the repair action. The performance 909
+comparison of the four strategies is shown in Figure 9, and the complete flow from initial 910
+failures through classification to final repair is visualized in Figure 9.911
+All-Prompt All-Route Random Ours020406080100Repair Success Rate (%)
+17.284.7
+51.084.7
+78.3
+62.170.278.3
+47.873.4
+60.681.5Repair Success Rate by Strategy and Failure Type
+MSU
+PSK
+Overall
+Figure 9.MSU/PSK classification and repair effectiveness. (a) Repair success rate of four strategies
+on MSU, PSK and overall failure samples; (b) Sankey-style flow diagram of initial failures flowing
+through MSU/PSK classification to repaired/unrepaired outcomes.
+https://doi.org/10.3390/1010000
+
+=== PAGE 33 ===
+Version August 11, 2026 submitted to Journal Not Specified33 of 46
+1. As shown in Figure 9, for PSK failures, prompt optimization achieves a repair success 912
+rate of 78.3%, significantly outperforming model routing (62.1%), as these failures 913
+stem from insufficient prompt activation rather than inherent capability gaps.914
+2. For MSU failures, model routing achieves a repair success rate of 84.7%, far exceeding 915
+the 17.2% success rate of prompt optimization, confirming that critical knowledge 916
+deficits cannot be compensated by prompt adjustment alone.917
+3. The All-Prompt strategy performs poorly on MSU samples, with an overall success 918
+rate of only 47.8%, as it wastes computational budget on uncorrectable capability 919
+deficits. 920
+4. The All-Route strategy achieves the highest raw success rate on MSU samples but 921
+incurs 3.2 ×the inference cost of the baseline, making it economically unfeasible for 922
+large-scale deployment. 923
+5. As illustrated in Figure 9, our proposed strategy correctly classifies 150 initial failures 924
+into 75 MSU and 75 PSK cases, and applies targeted repair actions respectively, 925
+achieving an overall repair success rate of 81.5% with only 1.6 ×the baseline cost, 926
+striking the optimal balance between repair effectiveness and computational overhead. 927
+These empirical outcomes corroborate that the MSU/PSK failure taxonomy delivers 928
+executable guidelines for differentiated error rectification, which enables cost-effective 929
+adaptive scheduling for real-world streaming deployment systems.930
+All classification performance metrics of this module are evaluated against human 931
+annotated gold labels to avoid self-loop judge evaluation bias.932
+5.9.8. Cost–Diagnostic Depth Trade-off 933
+This set of experiments responds to the plausible skepticism regarding the incremental 934
+computational burden incurred by our proposed framework. We quantitatively charac- 935
+terize the Pareto trade-off between inference overhead and diagnostic granularity under 936
+multiple evaluation paradigms. The empirical evidence verifies that the marginal computa- 937
+tional expense yields substantial enhancement in diagnostic resolution, as well as tangible 938
+decision-making references for downstream error rectification.939
+We conduct comparative assessments over five evaluation paradigms with progres- 940
+sively elevated diagnostic sophistication. All ablation runs are executed on the mixed 941
+200-sample corpus, where Kimi-k2.6-k2.6 is designated as the fixed target LLM backbone, 942
+detailed as follows: 943
+1. Binary Feedback: Traditional streaming evaluation that only outputs binary cor- 944
+rect/incorrect labels 945
+2. Overall Judge: A single judge LLM provides a holistic natural-language explanation 946
+of the failure, without sub-task decomposition 947
+3. Ours without MSU/PSK: Atomic sub-task decomposition and per-sub-task diagnosis, 948
+without knowledge boundary classification 949
+4. Ours Full: Complete framework with sub-task diagnosis and MSU/PSK classification 950
+5. Ours Full + Routing: Complete framework plus adaptive model routing for failure 951
+remediation 952
+For each evaluated paradigm, we quantify six quantitative metrics as follows: the average 953
+invocation count of the target LLM, the average calling frequency of the referee LLM, total 954
+average token consumption, mean inference latency, diagnostic depth score, and corrective 955
+repair success rate. Specifically, the diagnostic depth score is defined on a discrete ordinal 956
+scale ranging from 0 to 4, detailed as below: 957
+• 0: Only binary correct/incorrect feedback 958
+• 1: Holistic error explanation without sub-task localization959
+https://doi.org/10.3390/1010000
+
+=== PAGE 34 ===
+Version August 11, 2026 submitted to Journal Not Specified34 of 46
+• 2: Precise localization of failed sub-tasks 960
+• 3: MSU/PSK classification of failure causes 961
+• 4: Actionable repair recommendations and execution capability962
+All cost metrics are normalized relative to the Binary Feedback mode for fair comparison. 963
+The trade-off relationship is visualized in Figure 10. 964
+/uni00000025/uni0000004c/uni00000051/uni00000044/uni00000055/uni0000005c
+/uni00000029/uni00000048/uni00000048/uni00000047/uni00000045/uni00000044/uni00000046/uni0000004e/uni00000032/uni00000059/uni00000048/uni00000055/uni00000044/uni0000004f/uni0000004f
+/uni0000002d/uni00000058/uni00000047/uni0000004a/uni00000048/uni00000032/uni00000058/uni00000055/uni00000056/uni00000003/uni0000005a/uni00000012/uni00000052
+/uni00000030/uni00000036/uni00000038/uni00000012/uni00000033/uni00000036/uni0000002e/uni00000032/uni00000058/uni00000055/uni00000056
+/uni00000029/uni00000058/uni0000004f/uni0000004f/uni00000032/uni00000058/uni00000055/uni00000056/uni00000003/uni00000029/uni00000058/uni0000004f/uni0000004f
+/uni0000000e/uni00000003/uni00000035/uni00000052/uni00000058/uni00000057/uni0000004c/uni00000051/uni0000004a
+/uni00000028/uni00000059/uni00000044/uni0000004f/uni00000058/uni00000044/uni00000057/uni0000004c/uni00000052/uni00000051/uni00000003/uni00000030/uni00000052/uni00000047/uni00000048/uni00000013/uni00000011/uni00000013/uni00000013/uni00000011/uni00000018/uni00000014/uni00000011/uni00000013/uni00000014/uni00000011/uni00000018/uni00000015/uni00000011/uni00000013/uni00000015/uni00000011/uni00000018/uni00000016/uni00000011/uni00000013/uni00000031/uni00000052/uni00000055/uni00000050/uni00000044/uni0000004f/uni0000004c/uni0000005d/uni00000048/uni00000047/uni00000003/uni00000026/uni00000052/uni00000056/uni00000057
+/uni00000027/uni00000048/uni00000053/uni00000057/uni0000004b/uni0000001d/uni00000003/uni00000013/uni00000027/uni00000048/uni00000053/uni00000057/uni0000004b/uni0000001d/uni00000003/uni00000014/uni00000027/uni00000048/uni00000053/uni00000057/uni0000004b/uni0000001d/uni00000003/uni00000015/uni00000027/uni00000048/uni00000053/uni00000057/uni0000004b/uni0000001d/uni00000003/uni00000016/uni00000027/uni00000048/uni00000053/uni00000057/uni0000004b/uni0000001d/uni00000003/uni00000017/uni00000026/uni00000052/uni00000056/uni00000057 /uni00000027/uni0000004c/uni00000044/uni0000004a/uni00000051/uni00000052/uni00000056/uni00000057/uni0000004c/uni00000046/uni00000003/uni00000027/uni00000048/uni00000053/uni00000057/uni0000004b /uni00000035/uni00000048/uni00000053/uni00000044/uni0000004c/uni00000055/uni00000003/uni00000028/uni00000049/uni00000049/uni00000048/uni00000046/uni00000057/uni00000003/uni00000037/uni00000055/uni00000044/uni00000047/uni00000048/uni00000010/uni00000052/uni00000049/uni00000049
+/uni00000031/uni00000052/uni00000055/uni00000050/uni00000044/uni0000004f/uni0000004c/uni0000005d/uni00000048/uni00000047/uni00000003/uni00000026/uni00000052/uni00000056/uni00000057
+/uni00000035/uni00000048/uni00000053/uni00000044/uni0000004c/uni00000055/uni00000003/uni00000036/uni00000058/uni00000046/uni00000046/uni00000048/uni00000056/uni00000056/uni00000003/uni00000035/uni00000044/uni00000057/uni00000048
+/uni00000013/uni00000015/uni00000013/uni00000017/uni00000013/uni00000019/uni00000013/uni0000001b/uni00000013/uni00000014/uni00000013/uni00000013
+/uni00000035/uni00000048/uni00000053/uni00000044/uni0000004c/uni00000055/uni00000003/uni00000036/uni00000058/uni00000046/uni00000046/uni00000048/uni00000056/uni00000056/uni00000003/uni00000035/uni00000044/uni00000057/uni00000048/uni00000003/uni0000000b/uni00000008/uni0000000c
+Figure 10.Cost–diagnostic depth–repair effect trade-off. Blue bars represent normalized computa-
+tional cost (left axis), red line with markers represents repair success rate (right axis), and the value
+above each bar indicates the diagnostic depth score.
+1. The Binary Feedback mode has the lowest cost (normalized to 1.0) but the lowest diag- 965
+nostic depth (score = 0), providing no actionable information for failure remediation. 966
+2. The Overall Judge mode (cost = 1.3, depth = 1) provides limited explanatory power but 967
+cannot locate specific failure stages, offering only vague guidance for optimization.968
+3. The Ours Full mode (cost = 1.8, depth = 3) incurs moderate additional cost compared 969
+to baselines, but achieves a 200% improvement in diagnostic depth, enabling both 970
+sub-task localization and knowledge boundary identification.971
+4. The Ours Full + Routing mode (cost = 2.4, depth = 4) has the highest cost, but delivers 972
+the strongest practical repair capability with an 88.5% task completion rate, making 973
+it suitable for high-reliability deployment scenarios where correctness is prioritized 974
+over cost. 975
+5. The proposed framework offers flexible configuration options: users can select dif- 976
+ferent modes based on cost constraints and diagnostic requirements, ranging from 977
+lightweight binary feedback to full-process diagnostic repair.978
+The above quantitative analysis substantiates that the marginal computational overhead 979
+introduced by our framework is fully justified by the substantial gains in diagnostic gran- 980
+ularity and actionable decision support. This cost-performance trade-off is particularly 981
+valuable for enterprise-grade industrial deployment scenarios that mandate interpretable, 982
+auditable and controllable model behavioral outputs. 983
+5.10. Case Study 984
+We present seven representative cases to illustrate the behavior of our framework. 985
+Detailed case tables are provided in the supplementary material due to space limitations.986
+https://doi.org/10.3390/1010000
+
+=== PAGE 35 ===
+Version August 11, 2026 submitted to Journal Not Specified35 of 46
+5.10.1. Case 1: Typical PSK Failure (Prompt Sensitivity)987
+Task Background (ToolBench):The task requires invoking a weather API and return- 988
+ing the result in standard JSON format with keys city ,temperature , and condition . The 989
+target model (Kimi-k2.6) returns correct weather data but uses non -standard key names 990
+(e.g., city_name instead of city ). This is a typicalPSKfailure: the knowledge (what to 991
+output) exists, but the prompt does not enforce the exact format.Sub -task diagnosis: 992
+Intent recognition (Success), parameter extraction (Success), call syntax (Failure), result 993
+interpretation (Success). 994
+MSU/PSK classification:After 5 groups of prompt paraphrasing tests (rephrasing, 995
+adding a JSON example), the model succeeds 3 times and fails 2 times. The success rate 996
+r=0.6∈[0.2, 0.8], judged asPSK. 997
+Processing strategy:The routing module does not replace the model but optimizes 998
+the prompt by adding explicit JSON formatting constraints (e.g., “Output must be a JSON 999
+object with exactly the keys ‘city’, ‘temperature’, ‘condition’”). The model outputs standard 1000
+results in subsequent attempts. 1001
+Comparison with baselines:Table 18 compares our method against two representative 1002
+streaming baselines adapted from the ORE literature: SelfORE (unsupervised clustering 1003
+baseline) and RoCORE (weakly -supervised relation -oriented method). In the streaming 1004
+evaluation setting, SelfORE only reports binary overall correctness; RoCORE can identify 1005
+the failure as a “format mismatch” but cannot distinguish PSK from MSU. Our method 1006
+explicitly labels the error as PSK and triggers prompt optimization, achieving the correct 1007
+output. 1008
+Table 18.Case 1 comparison on a PSK failure (ToolBench – JSON format error). “Output” shows
+the final answer after routing (if any). “Diagnosis” indicates whether the failure reason is identi-
+fied.
+Method Diagnosis Routing Action Final Output
+SelfORE (unsuper-
+vised)“Incorrect” (binary) None Incorrect
+(non-standard JSON)
+RoCORE
+(weakly-
+supervised)“Format mismatch” None Incorrect (still
+non-standard)
+ASK-StreamDiag
+(Ours)PSK(sub -task: call
+syntax)Prompt optimiza-
+tionCorrect JSON
+This case demonstrates Prompt-Sensitive Known (PSK) failure: the model masters 1009
+core tool calling logic, yet fails to activate strict JSON format constraints under the original 1010
+prompt. After adding explicit key name restrictions, the model produces fully compliant 1011
+outputs without switching models. Table 19 records the complete trace. The 60% success
+Table 19.Full diagnostic record of PSK failure (ToolBench weather JSON formatting task, Kimi-k2.6-k2.6)
+Item Content
+Task Input Query Macau tomorrow weather, output JSON with exact keys: city, temperature, condition
+Target Wrong Output{"city_name": "Macau", "temp": "24°C", "weather": "sunny"}
+Atomic Sub-tasks 1.Intent Recognition; 2.Parameter Extraction; 3.API Syntax; 4.Result Parse
+Judge Diagnosis Result API Call Syntax: Fail; Intent & Parameter: Pass
+Perturbation Setting 3-4 variants with explicit key rules and JSON template examples
+Perturb Success Rater=0.6∈[0.2, 0.8]→PSK
+Repair Strategy Optimize prompt formatting constraints, keep original target model
+Baseline Limitation All baselines only return binary failure labels without format root cause
+https://doi.org/10.3390/1010000
+
+=== PAGE 36 ===
+Version August 11, 2026 submitted to Journal Not Specified36 of 46
+rate across prompt variants proves required knowledge exists inside the model, only 1012
+unstable under weak prompt constraints. Prompt optimization is a low-cost fix compared 1013
+to cross-model routing. 1014
+5.10.2. Case 2: Typical MSU Failure (Real Knowledge Defect)1015
+Task Background (DS -1000):“Implement a function to compute the Fibonacci se- 1016
+quence using dynamic programming (DP).” The target model (Qwen) always produces a 1017
+recursive implementation (standard naive recursion) and never uses DP , even after prompt 1018
+rephrasing. This indicates a genuine lack of knowledge about DP for Fibonacci – anMSU 1019
+failure. 1020
+Sub-task diagnosis:Algorithm understanding (Failure), control flow (Success), vari- 1021
+able usage (Success), syntax (Success). 1022
+MSU/PSK classification:After 5 prompt perturbations (rephrasing + few -shot DP 1023
+examples), the model fails all 5 times:r=0<0.2, classified asMSU.1024
+Processing strategy:The routing module directly dispatches this DP code task to a 1025
+stronger code -specialised model (GPT -4o), which produces the correct DP solution. The 1026
+follow-up task completion rate for similar DP problems improves by 28%.1027
+Comparison with baselines:Table 20 shows that SelfORE simply marks the answer 1028
+as “wrong”; RoCORE misclassifies the failure as “algorithm misunderstanding” but does 1029
+not differentiate it from a potentially correctable PSK (e.g., missing an import). Our method 1030
+correctly identifies it as MSU and routes to a stronger model, achieving the correct answer. 1031
+Table 20.Case 2 comparison on an MSU failure (DS-1000 – DP vs. recursion).
+Method Diagnosis Routing Action Final Output
+SelfORE (unsuper-
+vised)“Incorrect” None Recursive code
+(wrong)
+RoCORE
+(weakly-
+supervised)“Algorithm under-
+standing”None Recursive code
+(wrong)
+Self-StreamICL
+(Ours)MSU(sub -task: algo-
+rithm)Route to GPT-4oCorrect DP solution
+This sample represents Model-Specific Unknown (MSU) failure: the target model lacks 1032
+inherent knowledge of dynamic programming optimization, and repeated prompt rewrit- 1033
+ing cannot fix the error. The task requires Fibonacci implementation with memoization, 1034
+while Qwen-turbo only outputs naive recursive code. Table1035
+reftab:case1-msu-code summarizes the full diagnostic pipeline. All five perturbed prompts 1036
+still trigger recursive outputs, confirming permanent knowledge deficiency rather than 1037
+prompt activation failure. Routing to a stronger code-specialized model eliminates this 1038
+category of error, while simple prompt engineering brings zero improvement.1039
+5.10.3. Case 3: Framework Limitation (Multi-modal Ambiguous Input)1040
+Task Background:A spatial reasoning task derived from an extended streaming sce- 1041
+nario (map colony identification) that contains an ambiguous visual description: “The dark 1042
+green colony is in the northeastern region, bordering the Atlantic Ocean and surrounded 1043
+by light -green colonies.” The correct answer is New Hampshire, but the model (Kimi-k2.6) 1044
+incorrectly selects Rhode Island. 1045
+Sub-task diagnosis:Visual element extraction (Failure), spatial relation reasoning (Fail- 1046
+ure), choice mapping (Failure). The text -based judge LLM also misjudges these sub -tasks, 1047
+as the ambiguity cannot be resolved from text alone. 1048
+https://doi.org/10.3390/1010000
+
+=== PAGE 37 ===
+Version August 11, 2026 submitted to Journal Not Specified37 of 46
+Table 21.Full diagnostic record of MSU failure (DS-1000 Fibonacci DP task, Qwen-turbo)
+Item Content
+Task Input Implement a function to compute the Fi-
+bonacci sequence using dynamic program-
+ming and memoization.
+Target Wrong Outputdef fib(n):
+if n <= 1:
+return n
+return fib(n-1) + fib(n-1)
+Atomic Sub-tasks 1. Algorithm Understanding; 2. Control
+Flow; 3. Variable Usage; 4. Syntax
+Judge Diagnosis Result Algorithm Understanding: Fail; Others: Pass
+Perturbation Setting 5 prompt variants (rewrite instruction + DP
+example + recursion defect reminder)
+Perturb Success Rater=0.0<τ low=0.2⇒MSU
+Repair Strategy Route task to GPT-4o for standard DP imple-
+mentation
+Baseline Limitation SelfORE only outputs "Task Failed"; Ro-
+CORE marks algorithm error without
+MSU/PSK distinction
+Classification result:Not applicable because the judge itself fails; the framework 1049
+cannot provide a reliable MSU/PSK label. 1050
+Analysis:The current framework is built solely on pure -text LLMs and cannot han- 1051
+dle tasks that rely on genuine visual -spatial information. Future work will introduce 1052
+multi -modal judge models (e.g., GPT -4V or CLIP -based verification) to support such cases. 1053
+Comparison:Table 22 shows that all text -only baselines fail; a hypothetical 1054
+multi-modal version of our framework would be needed.1055
+Table 22.Case 3 – failure of text-only frameworks on a visual-spatial reasoning task.
+Method Diagnosis Final Output
+SelfORE “Incorrect” Wrong (Rhode Island)
+RoCORE “Spatial reasoning”
+(mis-guided)Wrong (Rhode Island)
+Self-StreamICL (Ours,
+text-only)Judge also wrongWrong (Rhode Island)
+Hypothetical multi -modal
+versionCorrect spatial grounding Correct (New Hampshire)
+This medical differential diagnosis case further validates PSK characteristics in clinical 1056
+reasoning. Zhipu GLM-4 ignores high-weight fever indicators under the original prompt, 1057
+but correctly selects influenza after adding symptom weight prompts. Table 23 summarizes 1058
+key information. Medical reasoning PSK failures widely exist when symptom priority 1059
+rules are not explicitly stated in prompts, which can be eliminated by lightweight prompt 1060
+calibration. 1061
+5.10.4. Case 4: Iterative Refinement of Pseudo-labels (MSU/PSK Decision Process)1062
+To illustrate how our framework refines the classification of a failure over repeated 1063
+large-small model interactions, we take the MSU case (Fibonacci DP) and show the evolu-1064
+tion of the probability that the target model “knows” the algorithm. At each round, the 1065
+judge LLM computes a confidence score (posterior probability of correct sub -task execu- 1066
+tion) based on prompt perturbations and the target model’s responses. Table 24 shows the 1067
+https://doi.org/10.3390/1010000
+
+=== PAGE 38 ===
+Version August 11, 2026 submitted to Journal Not Specified38 of 46
+Table 23.PSK diagnostic record (DDXPlus fever-cough patient case, Zhipu GLM-4)
+Item Content
+Patient Input Persistent cough, 38.5°C fever, fatigue for 5 days; candidate: flu, pneumonia, rhinitis
+Original Wrong Diagnosis Rhinitis (ignores fever risk weight)
+Failed Sub-task Risk Factor Weighting
+Perturb Success Rater=0.64→PSK
+Repair Operation Add rule: fever >38°C prioritizes influenza diagnosis
+Post-repair Result Correct primary diagnosis: influenza
+probabilities for the two competing hypotheses: “Knowledge present (PSK)” vs. “Knowl- 1068
+edge absent (MSU)”. Initially, the model is uncertain ( ∼55% vs. 45%). Through iterative 1069
+verification (prompt rephrasing, adding examples, cross -checking), the confidence for MSU 1070
+increases to 93% by round 5, leading to a definitive MSU classification and routing to a 1071
+stronger model. This process mirrors the pseudo-label refinement table in (Table 6).1072
+Table 24.Iterative refinement of MSU/PSK decision for the DS -1000 DP failure. Probabilities rep-
+resent the judge LLM’s belief that the target model’s failure is due to genuine knowledge absence
+(MSU) vs. prompt-sensitivity (PSK).
+Round Feedback demonstration Prob(MSU) Prob(PSK)
+1 (initial) zero-shot 55% 45%
+2 rephrase instruction: “Write DP iteration with
+memoization”68% 32%
+3 add few-shot DP example (Python) 79% 21%
+4 add counter -example showing recursion is
+wrong for large n87% 13%
+5 cross-validate with second judge (GPT-4o) 93%7%
+The clear divergence after round 3 justifies the MSU classification and the subsequent 1073
+routing decision. This case study reinforces the main claim of our paper: fine -grained 1074
+sub-task diagnosis combined with iterative verification and MSU/PSK classification pro- 1075
+vides actionable insights that are not available from binary feedback alone. Future work 1076
+could incorporate explicit vision-language grounding (e.g., CLIP-based verification) or 1077
+multi-modal judges to handle such cases [ 31,51]. We track the posterior probability of 1078
+MSU/PSK judgment across 5 rounds of prompt perturbation for the DS-1000 Fibonacci 1079
+sample, to show how multi-round verification stabilizes classification confidence. Table 25 1080
+lists iterative probability changes. 1081
+Table 25.Iterative MSU/PSK posterior probability refinement across perturbation rounds
+Round Prompt Modification Prob(MSU) / Prob(PSK)
+1 Original zero-shot instruction 55% / 45%
+2 Rewrite DP iterative requirement 68% / 32%
+3 Append DP memoization few-shot example 79% / 21%
+4 Add recursion time complexity defect reminder 87% / 13%
+5 Cross validate with secondary GPT-4 judge 93% / 7%
+As prompt constraints and cross-judge verification accumulate, the model’s permanent 1082
+knowledge deficiency becomes highly certain, providing reliable basis for adaptive routing 1083
+decisions. 1084
+https://doi.org/10.3390/1010000
+
+=== PAGE 39 ===
+Version August 11, 2026 submitted to Journal Not Specified39 of 46
+5.10.5. Case 5: Baseline Comparison on DS-1000 (MSU Failure)1085
+This case compares the diagnostic granularity between baseline methods and our 1086
+framework using a representative Python code generation task from DS-1000, correspond- 1087
+ing to the error distribution analysis in Figure 8 (Panel A). The task requires implementing 1088
+a Fibonacci sequence function using dynamic programming (DP), with Qwen-turbo as the 1089
+target model. 1090
+•Panel A: Task Input 1091
+The task instruction specifies: “Implement a function to compute the Fibonacci se- 1092
+quence using dynamic programming.” The core requirement is an iterative DP imple- 1093
+mentation with memoization, rather than naive recursion.1094
+•Panel B: Baseline Output 1095
+The LifelongAgentBench baseline generates a syntactically valid recursive Fibonacci 1096
+implementation that fails the unit tests. The evaluation only returns a binary “incorrect” 1097
+label, with no information about the failure location or cause, and no suggested 1098
+remediation action. 1099
+•Panel C: Ours Diagnosis 1100
+Our framework decomposes the task into four atomic sub-tasks and performs inde- 1101
+pendent diagnosis, as summarized in Section 5.10.5.1102
+Sub-task Status Explanation Boundary
+Type
+Algorithm Under-
+standingFail Uses naive recursion instead of itera-
+tive dynamic programmingMSU
+Control Flow Pass Base cases and recursive logic are
+correctly implemented-
+Variable Usage Pass Variables are properly defined and
+initialized-
+Syntax & Formatting Pass Code is syntactically valid and exe-
+cutable-
+After prompt perturbation testing (rephrased instruction + few-shot DP examples), 1103
+the model still produces recursive implementations, with a success rate of 0. The failure 1104
+is therefore classified as MSU, indicating a genuine lack of DP implementation capability. 1105
+The framework recommends routing this type of task to a stronger code-specialized model, 1106
+consistent with the repair strategy validated in Figure 9.1107
+• Panel D: Repaired ResultThe task is routed to GPT-4o according to the diagnosis, 1108
+which generates a correct iterative DP implementation with memoization that passes 1109
+all unit tests. 1110
+This case clearly shows that baseline methods can only determine that a model fails, 1111
+but not why it fails or how to fix it. Our framework precisely locates the root cause at 1112
+the sub-task level, distinguishes between capability deficits and activation issues, and 1113
+provides targeted repair actions. We contrast the output granularity between traditional 1114
+streaming baseline LifelongAgentBench and our fine-grained framework on the same DP 1115
+code sample, highlighting the black-box limitation of binary feedback. Table 26 presents 1116
+side-by-side comparison. Baselines cannot locate exact failure sub-tasks or distinguish 1117
+failure types, making targeted model optimization impossible. Our framework outputs 1118
+structured interpretable diagnosis for downstream routing.1119
+https://doi.org/10.3390/1010000
+
+=== PAGE 40 ===
+Version August 11, 2026 submitted to Journal Not Specified40 of 46
+Table 26.Diagnostic granularity comparison: LifelongAgentBench baseline vs our ASK-StreamDiag
+Method Diagnostic Output
+LifelongAgentBench Baseline Single binary label: Final Result: Incorrect; No sub-task breakdown, no root cause explanation
+Ours ASK-StreamDiag Algorithm Understanding: Fail (Use recursion instead of DP , MSU)
+Control Flow: Pass (Valid recursive boundary condition)
+Variable Usage: Pass (No undefined variables)
+Syntax: Pass (Executable Python code)
+5.10.6. Case 6: Full Mechanism Demonstration on ToolBench (PSK Failure)1120
+This case demonstrates the complete end-to-end mechanism pipeline of our frame- 1121
+work: initial failure →sub-task diagnosis →prompt perturbation testing →MSU/PSK 1122
+classification →targeted repair, corresponding to the repair flow analysis in Figure 9. The 1123
+task is from ToolBench, requiring the model to check the weather in Macau for tomor- 1124
+row and return the result in standard JSON format with keys city ,temperature , and 1125
+condition. Kimi-k2.6-k2.6 is used as the target model.1126
+5.10.7. Step 1: Initial Failure 1127
+The model initially outputs a function-style call weather("Macau", "tomorrow") in- 1128
+stead of the required JSON structure. The overall evaluation result is incorrect.1129
+5.10.8. Step 2: Sub-task Diagnosis 1130
+The judge LLM independently evaluates each atomic sub-task, as shown in Table 27.1131
+Table 27.Sub-task diagnosis result for the ToolBench PSK failure case.
+Sub-task Status Explanation
+Intent Recognition Pass Correctly identifies the need to call the
+weather API
+Parameter Extraction Pass Correctly extracts location ‘Macau’ and
+date ‘tomorrow’
+API Call Syntax Fail Output does not conform to the required
+JSON format
+Result Interpretation N/A API call has not been executed
+The diagnosis shows that the model masters the core tool-use capability but fails only 1132
+on output format compliance, which aligns with the high proportion of API syntax errors 1133
+in baseline methods shown in Figure 8 (Panel C). 1134
+5.10.9. Step 3: Prompt Perturbation Testing 1135
+We test four prompt variants on the same task as shown in Section 5.10.9:1136
+Prompt Variant Result
+Original prompt Fail
+Add ‘strict JSON only’ constraint Success
+Add a JSON format example Success
+Add explicit JSON schema template Success
+The empirical success rate is 0.75, which falls within the [0.2, 0.8 ]interval. The failure 1137
+is therefore classified as PSK: the model possesses the required capability, but it is not 1138
+reliably activated by the original prompt. 1139
+https://doi.org/10.3390/1010000
+
+=== PAGE 41 ===
+Version August 11, 2026 submitted to Journal Not Specified41 of 46
+5.10.10. Step 4: PSK-guided Repair 1140
+Since the failure is classified as PSK, the framework applies prompt optimization 1141
+instead of costly model routing, adding explicit JSON format constraints to the instruction, 1142
+consistent with the optimal repair strategy for PSK errors validated in Figure 9. The repaired 1143
+output fully complies with the format requirements: 1144
+json 1145
+{ 1146
+"tool": "weather_api", 1147
+"arguments": { 1148
+"location": "Macau", 1149
+"date": "tomorrow" 1150
+} 1151
+} 1152
+This case illustrates that not all failures require upgrading to a stronger model. Fine- 1153
+grained sub-task diagnosis combined with MSU/PSK classification can identify low-cost 1154
+repair opportunities, significantly improving system efficiency while maintaining output 1155
+reliability. 1156
+5.10.11. Case 7: Framework Limitation on Multi-modal Tasks1157
+This case reveals the boundary of the current text-only framework. The task is a 1158
+spatial reasoning problem with ambiguous visual descriptions: "The dark green colony is 1159
+in the northeastern region, bordering the Atlantic Ocean and surrounded by light-green 1160
+colonies." The correct answer is New Hampshire, but the target model (Kimi-k2.6-k2.6) 1161
+incorrectly selects Rhode Island. The text-based judge LLM also fails to correctly evaluate 1162
+the sub-tasks of visual element extraction and spatial relation reasoning, as the geographic 1163
+ambiguity cannot be resolved from textual description alone. Consequently, the framework 1164
+cannot produce a reliable MSU/PSK classification for this type of task. This indicates that 1165
+the current framework is optimized for pure-text tasks and cannot handle scenarios that 1166
+rely on genuine visual-spatial information. Future work will introduce multi-modal judge 1167
+models to extend the framework to multi-modal streaming evaluation scenarios.Table 1168
+28 summarizes the limitation analysis. The current framework is restricted to text-only
+Table 28.Limitation case: text judge failure on geographic spatial reasoning task
+Item Content
+Input Description Northeast dark green land bordering Atlantic, surrounded by light green regions
+Ground Truth New Hampshire
+Model Wrong Output Rhode Island
+Failed Sub-tasks Visual Element Extraction, Spatial Relation Reasoning, Region Matching
+Perturbation Result All 5 rephrased descriptions lead to wrong prediction
+Judge Reliability Pure-text GPT-4 cannot resolve spatial ambiguity; invalid MSU/PSK classification
+Future Improvement Direction Introduce multi-modal vision-language judge model
+1169
+streaming tasks; multi-modal judge modules will be developed in future work to extend 1170
+evaluation coverage. 1171
+6. Conclusion 1172
+6.1. Core Recap and Summary of Contributions 1173
+Existing static benchmarks and coarse-grained streaming evaluation pipelines can 1174
+only output binary correct-or-incorrect labels for LLM task outputs, failing to trace the 1175
+https://doi.org/10.3390/1010000
+
+=== PAGE 42 ===
+Version August 11, 2026 submitted to Journal Not Specified42 of 46
+exact sub-task stage of model failure or distinguish whether errors arise from inherent 1176
+knowledge deficiency or prompt activation failure. To address this critical black-box 1177
+defect in mainstream LLM evaluation systems, this work designs a fine-grained process- 1178
+aware analysis framework built atop the StreamBench streaming evaluation platform, and 1179
+validates its effectiveness across three representative real-world task domains: Python 1180
+code generation (DS-1000), clinical differential diagnosis (DDXPlus), and multi-tool API 1181
+invocation (ToolBench). 1182
+Our work delivers four distinct, verifiable contributions to the LLM evaluation com- 1183
+munity. First, we shift the dominant evaluation paradigm from outcome-centric scoring 1184
+to process-aware process-aware diagnosis by introducing atomic sub-task decomposition 1185
+guided by domain rules, breaking complex end-to-end tasks into interpretable, inde- 1186
+pendently verifiable minimal reasoning units. Second, we construct a multi-judge LLM 1187
+diagnostic pipeline that generates structured JSON evidence for each sub-task, enabling 1188
+granular failure localization without over-reliance on human annotation. Third, we inte- 1189
+grate the knowledge boundary theory (MSU / PSK) into streaming evaluation via prompt 1190
+perturbation testing, providing a quantitative classification standard to separate perma- 1191
+nent knowledge gaps from transient prompt sensitivity failures. Fourth, we release a 1192
+unified open-source fine-grained diagnostic dataset covering coding, medical reasoning, 1193
+and tool-use scenarios, alongside visualizable capability profiling and adaptive model 1194
+routing modules for industrial deployment. 1195
+Extensive controlled experiments, ablation studies, and multi-dimensional sensitivity 1196
+analyses consistently validate the advantages of our ASK-StreamDiag framework over 1197
+traditional streaming baselines (Evo-Memory, MAM-StreamICL, LifelongAgentBench). 1198
+On all three test datasets, our method achieves substantial improvements in exact match 1199
+(EM), F1, and Matthews correlation coefficient (MCC) metrics, even when trading mild 1200
+computational overhead for deeper diagnostic granularity. Ablation results confirm that 1201
+atomic sub-task decomposition acts as the core enabler of precise error tracing; removing 1202
+this component reduces task completion rate from 88.5% to merely 70.0%. MSU/PSK 1203
+classification further delivers targeted remediation guidance: prompt optimization achieves 1204
+a 78.3% repair success rate for PSK failures, while model routing reaches 84.7% accuracy 1205
+for MSU knowledge deficits, striking an optimal balance between inference cost and 1206
+correction efficiency. Hyperparameter sensitivity tests verify the robustness of our threshold 1207
+configuration ( τlow=0.2,τhigh=0.8), and cross-domain generalization experiments 1208
+demonstrate stable diagnostic accuracy above 73% across unseen task distributions. Case 1209
+analyses further illustrate that our framework eliminates the ambiguity of binary feedback, 1210
+pinpointing root causes such as algorithm misunderstanding or malformed API syntax that 1211
+baseline methods cannot identify. 1212
+6.2. Practical Deployment Implications 1213
+Beyond theoretical advances in LLM evaluation, the proposed system delivers action- 1214
+able engineering value for industrial LLM service scheduling. The visualizable radar capa- 1215
+bility profile quantifies per-sub-task model strengths and weaknesses, supporting differen- 1216
+tiated routing strategies for mixed workload streams. Operators can route MSU-type hard 1217
+reasoning tasks to high-capacity specialized models while resolving PSK format/activation 1218
+failures via lightweight prompt rewriting, substantially reducing the number of expensive 1219
+large-model calls by employing targeted, low-cost interventions (e.g., prompt rewriting for 1220
+PSK errors) instead of indiscriminately escalating all failures to more powerful models.1221
+https://doi.org/10.3390/1010000
+
+=== PAGE 43 ===
+Version August 11, 2026 submitted to Journal Not Specified43 of 46
+6.3. Limitations of This Work 1222
+This research acknowledges three clear limitations that constrain its full generalizabil- 1223
+ity, which we frame objectively without undermining core findings. First, all task instances 1224
+and judge diagnostic logic operate exclusively on text-only inputs; the current pipeline 1225
+cannot process multi-modal tasks with visual, audio, or spatial context. As shown in our 1226
+spatial reasoning case study, text-based judge LLMs produce unreliable sub-task judgments 1227
+for vision-dependent problems, breaking the MSU/PSK classification workflow. Second, 1228
+our experimental scope is limited to four mainstream text LLMs (Qwen, Kimi-k2.6, Zhipu 1229
+GLM-4, DouBao) and three fixed benchmark datasets; performance trends may shift drasti- 1230
+cally for ultra-small edge LLMs or long-context document reasoning streams exceeding 1231
+400 input tokens, where diagnostic accuracy drops below 70%. Third, the prompt pertur- 1232
+bation module adds non-negligible inference latency and token consumption—while our 1233
+cost-depth tradeoff analysis confirms controllable overhead for enterprise use, lightweight 1234
+low-resource deployment scenarios would require further optimization to cut judge LLM 1235
+invocation frequency. 1236
+6.4. Future Research Directions 1237
+Building on the identified limitations and open challenges in fine-grained streaming 1238
+evaluation, we outline four concrete, actionable future research branches.1239
+1. Multi-modal extension of the diagnostic framework: Integrate vision-language judge 1240
+models (GPT-4o, multimodal GLM) to decompose and verify visual-spatial sub-tasks, 1241
+expanding the framework from pure text to cross-modal streaming agent evaluation. 1242
+2. Lightweight judge distillation: Distill the high-performance GPT-4 judge into small 1243
+open-source evaluator LLMs, eliminating reliance on closed API judges and drastically 1244
+reducing per-sample inference cost for edge streaming systems.1245
+3. Dynamic adaptive sub-task granularity: Replace fixed domain decomposition tem- 1246
+plates with online task clustering to automatically adjust the number of atomic sub- 1247
+tasks based on input complexity, balancing diagnostic precision and computational 1248
+efficiency for variable-length task streams. 1249
+4. Knowledge boundary intervention research: Extend MSU/PSK classification to 1250
+design targeted improvement pipelines—develop retrieval-augmented fine-tuning 1251
+workflows for MSU permanent knowledge gaps, and automated prompt calibration 1252
+pipelines for recurring PSK activation failures. 1253
+6.5. Closing Remarks 1254
+This paper advances LLM evaluation beyond superficial aggregate accuracy scores 1255
+toward transparent, process-aware failure diagnosis in real-time streaming environments. 1256
+By unifying atomic task decomposition, LLM-as-judge sub-task auditing, and knowledge1257
+boundary classification within a single end-to-end pipeline, we provide both researchers 1258
+and industrial practitioners a standardized tool to demystify black-box LLM behavior. 1259
+We anticipate the open diagnostic dataset and proposed ASK-StreamDiag framework 1260
+will inspire further work on interpretable, deployable continual evaluation systems for 1261
+next-generation large language agents. 1262
+References 1263
+1. Gema, A.P .; Leang, J.O.J.; Hong, G.; et al. Are we done with MMLU? In Proceedings of the 1264
+Proceedings of the 2025 Conference of the Nations of the Americas Chapter of the Association1265
+for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers), 2025, 1266
+pp. 5069–5096. 1267
+https://doi.org/10.3390/1010000
+
+=== PAGE 44 ===
+Version August 11, 2026 submitted to Journal Not Specified44 of 46
+2. Banerjee, S.; Agarwal, A.; Singh, E. The vulnerability of language model benchmarks: Do they 1268
+accurately reflect true LLM performance? arXiv preprint arXiv:2412.035972024.1269
+3. Yehudai, A.; et al. Survey on evaluation of LLM-based agents. arXiv preprint arXiv:2503.164161270
+2025. 1271
+4. Wu, C.K.; Tam, Z.R.; Lin, C.Y.; Chen, Y.N.; Lee, H.y. StreamBench: Towards benchmarking 1272
+continuous improvement of language agents. In Proceedings of the Advances in Neural 1273
+Information Processing Systems 37 (NeurIPS 2024), Datasets and Benchmarks Track, 2024.1274
+5. Lai, Y.; Li, C.; Wang, Y.; Zhang, T.; Zhong, R.; Zettlemoyer, L.; Yih, S.W.t. DS-1000: A natural 1275
+and reliable benchmark for data science code generation. arXiv preprint arXiv:2211.11501 2022. 1276
+6. Yin, X.; Zhang, X.; Ruan, J.; Wan, X. Benchmarking knowledge boundary for large language 1277
+model: A different perspective on model evaluation. arXiv preprint arXiv:2402.114932024.1278
+7. Hendrycks, D.; Burns, C.; Basart, S.; Zou, A.; Mazeika, M.; Song, D.; Steinhardt, J. Measuring 1279
+massive multitask language understanding. In Proceedings of the International Conference on 1280
+Learning Representations (ICLR), 2020. 1281
+8. Cobbe, K.; Kosaraju, V .; Bavarian, M.; Chen, M.; Jun, H.; Kaiser, L.; Plappert, M.; Tworek, J.; 1282
+Hilton, J.; Nakano, R.; et al. Training verifiers to solve math word problems. arXiv preprint1283
+arXiv:2110.141682021. 1284
+9. Srivastava, A.; et al. Beyond the Imitation Game: Quantifying and Extrapolating the Capa- 1285
+bilities of Language Models. Transactions onMachine Learning Research (TMLR) 2023. Also 1286
+arXiv:2206.04615. 1287
+10. Suzgun, M.; Scales, N.; Scharli, N.; Gehrmann, S.; Tay, Y.; Chung, H.W.; Chowdhery, A.; Le, Q.V .; 1288
+Chi, E.H.; Zhou, D.; et al. Challenging BIG-bench tasks and whether chain-of-thought can solve 1289
+them. In Proceedings of the Findings of the Association for Computational Linguistics: ACL 1290
+2023, 2023, pp. 13003–13051. 1291
+11. Wang, Y.; et al. MMLU-Pro: A More Robust and Challenging Multi-Task Language Understand- 1292
+ing Benchmark. In Proceedings of the Advances in Neural Information Processing Systems 37 1293
+(NeurIPS 2024), Track on Datasets and Benchmarks, 2024. Spotlight.1294
+12. Xuan, W.; et al. MMLU-ProX: A Multilingual Benchmark for Advanced Large Language Model 1295
+Evaluation. In Proceedings of the Proceedings of the 2025 Conference on Empirical Methods in 1296
+Natural Language Processing (EMNLP), Suzhou, China, 2025; pp. 1513–1532.1297
+13. Rein, D.; et al. GPQA: A Graduate-Level Google-Proof Q&A Benchmark. arXiv preprint1298
+arXiv:2311.120222024. 1299
+14. Liang, P .; Bommasani, R.; et al. Holistic Evaluation of Language Models. Transactions on1300
+Machine Learning Research (TMLR)2023. Also arXiv:2211.09110.1301
+15. Face, H. Open LLM Leaderboard v2, 2024. 1302
+16. Singhal, K.; et al. Large Language Models Encode Clinical Knowledge. Nature 2022. Multi- 1303
+MedQA benchmark introduced. 1304
+17. Lu, S.; et al. CodeXGLUE: A Machine Learning Benchmark Dataset for Code Understanding 1305
+and Generation. In Proceedings of the NeurIPS 2021 Datasets and Benchmarks Track, 2021.1306
+18. Zhong, W.; et al. AGIEval: A Human-Centric Benchmark for Evaluating Foundation Models. 1307
+arXiv preprint arXiv:2304.063642023. v2: September 2023.1308
+19. Chiang, W.L.; et al. Chatbot Arena: An Open Platform for Evaluating LLMs by Human 1309
+Preference. arXiv preprint arXiv:2403.041322024. 1310
+20. Spangher, L.; et al. Chatbot Arena Estimate: Towards a Generalized Performance Benchmark 1311
+for LLM Capabilities. In Proceedings of the Proceedings of NAACL 2025 (Industry Track), 2025, 1312
+pp. 1016–1025. 1313
+21. White, C.; et al. LiveBench: A Challenging, Contamination-Free LLM Benchmark. arXiv1314
+preprint arXiv:2406.193142024. 1315
+22. Jimenez, C.E.; et al. SWE-bench: Can Language Models Resolve Real-World GitHub Issues? In 1316
+Proceedings of the The Twelfth International Conference on Learning Representations (ICLR), 1317
+2024. 1318
+23. Jain, N.; et al. LiveCodeBench: Holistic and Contamination Free Evaluation of Large Language 1319
+Models for Code. arXiv preprint arXiv:2403.079742024.1320
+https://doi.org/10.3390/1010000
+
+=== PAGE 45 ===
+Version August 11, 2026 submitted to Journal Not Specified45 of 46
+24. Madaan, A.; Tandon, N.; Clark, P .; Yang, Y. Memory-assisted prompt editing to improve GPT-3 1321
+after deployment. In Proceedings of the Proceedings of the 2022 Conference on Empirical 1322
+Methods in Natural Language Processing, 2022, pp. 2833–2861.1323
+25. Shinn, N.; Cassano, F.; Labash, B.; Gopinath, A.; Narasimhan, K.; Yao, S. Reflexion: Lan- 1324
+guage agents with verbal reinforcement learning. In Proceedings of the Advances in Neural 1325
+Information Processing Systems, 2023. 1326
+26. Zhao, A.; Huang, D.; Xu, Q.; Lin, S.; Liu, J.; Gao, Y. ExpEL: LLM agents are experiential learners. 1327
+In Proceedings of the Proceedings of the AAAI Conference on Artificial Intelligence, 2024, 1328
+Vol. 38, pp. 19632–19642. Issue 17. 1329
+27. Zhou, Y.; Tam, Z.R.; Lin, C.Y.; Chen, Y.N.; Lee, H.y. Dissecting logical reasoning in LLMs: A 1330
+fine-grained evaluation and supervision study. In Proceedings of the Findings of the Association 1331
+for Computational Linguistics: EMNLP 2025, 2025. 1332
+28. Zheng, C.; Zhu, J.; Ou, Z.; Wang, X.; Chen, M.; Huang, F.; Li, L. A survey of process reward 1333
+models: From outcome signals to process supervisions for large language models. arXiv1334
+preprint arXiv:2510.080492026. 1335
+29. She, S.; Liu, J.; Liu, Y.; Chen, J.; Huang, X.; Huang, S. R-PRM: Reasoning-Driven Process Reward 1336
+Modeling. In Proceedings of the Proceedings of the 2025 Conference on Empirical Methods in 1337
+Natural Language Processing, 2025, pp. 13438–13451. 1338
+30. Lightman, H.; et al. Let’s Verify Step by Step, 2023. Process reward models introduced.1339
+31. Zheng, C.; et al. ProcessBench: Identifying Process Errors in Mathematical Reasoning. In 1340
+Proceedings of the Proceedings of the 63rd Annual Meeting of the Association for Computational 1341
+Linguistics (ACL 2025), Vienna, Austria, 2025; pp. 1009–1024.1342
+32. Hong, S.; Ying, J.; Liang, H.; Liu, Z.; Sun, M. FRABench and UFEval: Unified fine-grained 1343
+evaluation with task and aspect generalization. In Proceedings of the International Conference 1344
+on Learning Representations (ICLR), 2026. 1345
+33. Zheng, S.; Zhang, X.; de Melo, G.; Wang, X.; Wang, L. Hierarchical Divide-and-Conquer for 1346
+Fine-Grained Alignment in LLM-Based Medical Evaluation. In Proceedings of the Proceedings 1347
+of the AAAI Conference on Artificial Intelligence, 2025, Vol. 39, pp. 26075–26082. https: 1348
+//doi.org/10.1609/aaai.v39i24.34803. 1349
+34. Brown, T.; Mann, B.; Ryder, N.; Subbiah, M.; Kaplan, J.D.; Dhariwal, P .; Neelakantan, A.; Shyam, 1350
+P .; Sastry, G.; Askell, A.; et al. Language models are few-shot learners. In Proceedings of the 1351
+Advances in Neural Information Processing Systems, 2020, Vol. 33, pp. 1877–1901.1352
+35. Banerjee, S.; et al. The Crisis of Modern LLM Evaluation: Limitations of Static Benchmarks and 1353
+LLM-as-Judge. Transactions onMachine Learning Research (TMLR)2025.1354
+36. Gema, M.; et al. Error Analysis of MMLU: Re-evaluating the Reliability of Classic LLM 1355
+Benchmarks. In Proceedings of the Proceedings of the 2025 Conference of the Nations of the 1356
+Americas Chapter of the Association for Computational Linguistics (NAACL), 2025.1357
+37. Li, X.; Zhang, Y.; Wang, J.; et al. Step-CoT: Step-level Chain-of-Thought with Verification for 1358
+Multimodal Reasoning. In Proceedings of the Proceedings of the 2024 Conference on Empirical 1359
+Methods in Natural Language Processing (EMNLP), 2024.1360
+38. Li, S.; Xu, C.; et al. LLMs cannot reliably judge (yet?): A comprehensive assessment on the 1361
+robustness of LLM-as-a-judge. arXiv preprint arXiv:2506.094432025.1362
+39. Li, Y.; et al. Bayesian Aggregation for LLM-as-Judge Evaluation. In Proceedings of the 1363
+Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing 1364
+(EMNLP), 2024. 1365
+40. Feng, Y.; Chen, D.; et al. Are we on the right way to assessing LLM-as-a-judge? arXiv preprint1366
+arXiv:2512.160412025. 1367
+41. Xue, J.; Lin, J.; Li, X.; Fang, Z.; Ren, X. Entity-Level Hallucination Detection for Multimodal 1368
+Question Answering. In Proceedings of the Proceedings of the 62nd Annual Meeting of the 1369
+Association for Computational Linguistics (ACL), 2024.1370
+42. Fansi Tchango, A.; Goel, R.; Wen, Z.; Martel, J.; Ghosn, J. DDXPlus: A New Dataset For 1371
+Automatic Medical Diagnosis. In Proceedings of the Advances in Neural Information Processing 1372
+Systems; Koyejo, S.; Mohamed, S.; Agarwal, A.; Belgrave, D.; Cho, K.; Oh, A., Eds. Curran 1373
+Associates, Inc., 2022, Vol. 35, pp. 31306–31318. 1374
+https://doi.org/10.3390/1010000
+
+=== PAGE 46 ===
+Version August 11, 2026 submitted to Journal Not Specified46 of 46
+43. Zuo, Y.; et al. MedXpertQA: Benchmarking Expert-Level Medical Reasoning and Understanding. 1375
+arXiv preprint arXiv:2501.183622025. Accepted at ICML 2025.1376
+44. Guo, Z.; Cheng, S.; Wang, H.; Liang, S.; Qin, Y.; Li, P .; Liu, Z.; Sun, M.; Liu, Y. StableToolBench: 1377
+Towards Stable Large-Scale Benchmarking on Tool Learning of Large Language Models. In 1378
+Proceedings of the Findings of the Association for Computational Linguistics: ACL 2024; Ku, 1379
+L.W.; Martins, A.; Srikumar, V ., Eds., Bangkok, Thailand, August 2024; pp. 11143–11156. 1380
+https://doi.org/10.18653/v1/2024.findings-acl.664. 1381
+45. Li, W.; Li, Y. Process Reward Model with Q-Value Rankings. arXiv preprint arXiv:2410.112871382
+2024. 1383
+46. Yan, Q.; He, X.; Yue, X.; Wang, X.E. Worse than Random? An Embarrassingly Simple Probing 1384
+Evaluation of Large Multimodal Models in Medical VQA. In Proceedings of the Findings of the 1385
+Association for Computational Linguistics: ACL 2025, Vienna, Austria, 2025; pp. 19188–19205.1386
+47. Ku, H.B.; Shin, J.; Lee, H.J.; Na, S.; Jeon, I. Multi-Agent LLM Debate Unveils the Premise Left 1387
+Unsaid. In Proceedings of the Proceedings of the 12th Argument Mining Workshop, Vienna, 1388
+Austria, 2025; pp. 58–73. 1389
+48. Wang, J.; et al. TDAG: A Multi-Agent Framework Based on Dynamic Task Decomposition and 1390
+Agent Generation. arXiv preprint arXiv:2402.101782024.1391
+49. Du, Y.; Tian, M.; Ronanki, S.; Rongali, S.; Bodapati, S.B.; Galstyan, A.; Wells, A.; Schwartz, R.; 1392
+Huerta, E.A.; Peng, H. Context Length Alone Hurts LLM Performance Despite Perfect Retrieval. 1393
+In Proceedings of the Findings of the Association for Computational Linguistics: EMNLP 2025, 1394
+Suzhou, China, 2025; pp. 23281–23298. 1395
+50. Borisov, V .; et al. Do Chatbot LLMs Talk Too Much? The YapBench Benchmark. arXiv preprint1396
+arXiv:2601.006242026. 1397
+51. Zhang, Y.; et al. Dissecting Logical Reasoning in LLMs: A Fine-Grained Evaluation and 1398
+Supervision Study. In Proceedings of the Findings of the Association for Computational 1399
+Linguistics: EMNLP 2025, 2025. 1400
+https://doi.org/10.3390/1010000
+

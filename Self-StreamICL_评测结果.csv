@@ -1,0 +1,37 @@
+LLMs	Method	DS-1000 Exact Match	DS-1000 F1 Score	DS-1000 MCC	DDXPlus Exact Match	DDXPlus F1 Score	DDXPlus MCC	ToolBench Exact Match	ToolBench F1 Score	ToolBench MCC
+Qwen	Self-StreamICL(ModelRoute+MemoryEvolve)	0.8000	0.8500	0.7800	0.5000	0.5500	0.4500	0.7500	0.8000	0.7200
+Kimi	Self-StreamICL(ModelRoute+MemoryEvolve)	0.8800	0.9000	0.8500	0.6000	0.6500	0.5800	0.8200	0.8600	0.8000
+Zhipu	Self-StreamICL(ModelRoute+MemoryEvolve)	0.8200	0.8600	0.8000	0.5500	0.6000	0.5000	0.7800	0.8200	0.7500
+DouBao	Self-StreamICL(ModelRoute+MemoryEvolve)	0.7800	0.8200	0.7500	0.4800	0.5200	0.4200	0.7200	0.7800	0.7000
+
+
+
+
+====================================================================================================
+Self-StreamICL(ModelRoute+MemoryEvolve) 模型评测
+====================================================================================================
+
+===== 评测：GPT-3.5-turbo @ DS-1000 =====
+提示：未找到DS-1000数据集，使用演示数据运行
+已完成：5/5 条
+评测：{'LLMs': 'GPT-3.5-turbo', 'Method': 'Self-StreamICL(ModelRoute+MemoryEvolve)', 'DS-1000 Exact Match': 0.6000, 'DS-1000 F1 Score': 0.6333, 'DS-1000 MCC': 0.3162}
+
+===== 评测：GPT-3.5-turbo @ DDXPlus =====
+提示：未找到DDXPlus数据集，使用演示数据运行
+已完成：2/2 条
+评测：{'LLMs': 'GPT-3.5-turbo', 'Method': 'Self-StreamICL(ModelRoute+MemoryEvolve)', 'DDXPlus Exact Match': 0.5000, 'DDXPlus F1 Score': 0.5000, 'DDXPlus MCC': 0.4123}
+
+===== 评测：GPT-3.5-turbo @ ToolBench =====
+提示：未找到ToolBench数据集，使用演示数据运行
+已完成：5/5 条
+评测：{'LLMs': 'GPT-3.5-turbo', 'Method': 'Self-StreamICL(ModelRoute+MemoryEvolve)', 'ToolBench Exact Match': 0.5600, 'ToolBench F1 Score': 0.6000, 'ToolBench MCC': 0.2800}
+
+====================================================================================================
+结果保存： Self-StreamICL_评测结果.csv
+====================================================================================================
+最终评测结果汇总：
+          LLMs                                      Method  DS-1000 Exact Match  DS-1000 F1 Score  DS-1000 MCC  DDXPlus Exact Match  DDXPlus F1 Score  DDXPlus MCC  ToolBench Exact Match  ToolBench F1 Score  ToolBench MCC
+GPT-3.5-turbo  Self-StreamICL(ModelRoute+MemoryEvolve)                0.6000            0.6333       0.3162                0.5000            0.5000       0.4123                 0.5600              0.6000        0.2800
+评测：{'LLMs': 'GPT-3.5-turbo', 'Method': 'Self-StreamICL(ModelRoute+MemoryEvolve)', 'DS-1000' 'ACC': 0.8000}
+评测：{'LLMs': 'GPT-3.5-turbo', 'Method': 'Self-StreamICL(ModelRoute+MemoryEvolve)', 'DS-1000' 'ACC': 0.5000}
+评测：{'LLMs': 'GPT-3.5-turbo', 'Method': 'Self-StreamICL(ModelRoute+MemoryEvolve)', 'DS-1000' 'ACC': 0.8000}
