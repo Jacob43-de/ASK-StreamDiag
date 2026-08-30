@@ -1,4 +1,4 @@
-API_KEY_GEMINI = "AQ.Ab8RN6JkRkhU9em58zALE-Qer5If1w0wHBRlvIHclXO4PLmfGg" 
+API_KEY_GEMINI = "" 
 MAX_MEMORY = 16
 MEMORY_EVOLVE = True          # 记忆进化开关
 MODEL_EVALUATE = True         # 模型动态评分开关
@@ -45,7 +45,6 @@ total_count = 0
 total_correct = 0
 total_invalid = 0
 
-# ===================== 辅助函数 =====================
 def get_best_model():
     return max(MODEL_LIST, key=lambda m: model_score[m.__name__])
 
@@ -74,7 +73,6 @@ def sql_similarity(pred_sql, true_sql):
     true_clean = re.sub(r'\s+', ' ', true_sql.strip().upper())
     return similarity(pred_clean, true_clean) > 0.7
 
-# ===================== 子任务定义 =====================
 SUBTASKS = [
     {"name": "table_identification", "description": "正确识别需要查询的表名，包括主表及关联表"},
     {"name": "filter_conditions", "description": "正确解析并写出 WHERE 子句中的过滤条件"},
@@ -202,7 +200,6 @@ shared_memory = []
 for sub in SUBTASKS:
     subtask_stats[sub["name"]] = {"total": 0, "correct": 0, "msu": 0, "psk": 0, "reliable": 0}
 
-# ===================== 主循环 =====================
 for idx, item in enumerate(stream_data):
     q = item["question"]
     true_a = item["answer"]
@@ -291,7 +288,6 @@ for idx, item in enumerate(stream_data):
             if len(shared_memory) > MAX_MEMORY:
                 shared_memory.pop(0)
     
-    # 输出信息
     print(f"===== 第{idx+1}题 | 模型：{model.__name__} =====")
     print(f"问题：{q[:60]}...")
     print(f"模型回答：{pred_a}")
