@@ -1,5 +1,5 @@
-API_KEY_QWEN = "sk-5a94d3c219a34ca3bccb3cd8ddeba635"
-API_KEY_ZHIPU = "2059308a2b184f0ab74f251481a7eb76.aoUQ71oedYHTX4hj"
+API_KEY_QWEN = ""
+API_KEY_ZHIPU = ""
 MAX_MEMORY = 16
 MEMORY_EVOLVE = True          # 记忆进化开关
 MODEL_EVALUATE = True         # 模型动态评分开关
@@ -28,7 +28,7 @@ def kimi(prompt):
     try:
         from openai import OpenAI
         client = OpenAI(
-            api_key="sk-qYmUO15MCJ8hDB7LeAoIYxEKsrCCWzgjGnp4Dq3CEDoIh78a", 
+            api_key="", 
             base_url="https://api.moonshot.cn/v1",
         )
         completion = client.chat.completions.create(
@@ -41,12 +41,11 @@ def kimi(prompt):
         print(f"Kimi模型调用失败：{str(e)}")
         return ""
 
-# 豆包模型（修正API_KEY获取方式）
+# 豆包模型
 def doubao(prompt):
     try:
         from openai import OpenAI
-        # 建议将密钥存入环境变量，此处临时改为直接赋值（仅测试用）
-        api_key_doubao = "ark-c73d57b8-cbf1-4083-9b6e-05953b7b5574-18a7e"
+        api_key_doubao = ""
         client_doubao = OpenAI(
             base_url="https://ark.cn-beijing.volces.com/api/v3",
             api_key=api_key_doubao,
@@ -59,8 +58,6 @@ def doubao(prompt):
     except Exception as e:
         print(f"豆包模型调用失败：{str(e)}")
         return ""
-
-# 通义千问模型
 def qwen(prompt):
     try:
         headers = {"Authorization": f"Bearer {API_KEY_QWEN}"}
@@ -75,8 +72,6 @@ def qwen(prompt):
     except Exception as e:
         print(f"通义千问模型调用失败：{str(e)}")
         return ""
-
-# 智谱AI模型
 def zhipu(prompt):
     try:
         headers = {"Authorization": f"Bearer {API_KEY_ZHIPU}"}
@@ -91,7 +86,6 @@ def zhipu(prompt):
     except Exception as e:
         print(f"智谱AI模型调用失败：{str(e)}")
         return ""
-
 # 模型函数字典
 MODEL_FUNC_DICT = {
     "qwen": qwen,
@@ -99,7 +93,7 @@ MODEL_FUNC_DICT = {
     "zhipu": zhipu,
     "doubao": doubao
 }
-# 模型显示名称映射（统一格式）
+# 模型显示名称映射
 MODEL_DISPLAY_NAME = {
     "qwen": "Qwen",
     "kimi": "Kimi",
@@ -241,8 +235,6 @@ def load_dataset(dataset_name: str) -> List[Dict]:
         Path(r"C:\Users\liuxi\Desktop\streambench\data\ddxplus\test-00000-of-00001 (1).parquet"),
         Path(r"C:\Users\liuxi\Desktop\streambench\data\toolbench\test-00000-of-00001 (1).parquet")
     ]
-    
-    # 按数据集名称匹配路径
     dataset_path_map = {
         "DS-1000": path_candidates[0],
         "DDXPlus": path_candidates[1],
@@ -347,7 +339,6 @@ def evaluate_model(model_name: str, dataset_name: str) -> Dict:
     print(f"评测：{result}")
     return result
 
-# 主函数：批量评测+保存CSV
 def main():
     print("="*100)
     print("Self-StreamICL(ModelRoute+MemoryEvolve) 模型评测")
