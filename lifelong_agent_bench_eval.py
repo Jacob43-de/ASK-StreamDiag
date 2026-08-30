@@ -84,7 +84,7 @@ def call_zhipu(prompt: str) -> str:
 
 def call_doubao(prompt: str) -> str:
     try:
-        api_key_doubao = os.getenv('ark-c73d57b8-cbf1-4083-9b6e-05953b7b5574-18a7e')
+        api_key_doubao = os.getenv('')
         client = OpenAI(base_url="https://ark.cn-beijing.volces.com/api/v3", api_key=api_key_doubao)
         response = client.responses.create(
             model="doubao-seed-2-0-lite-260215",
