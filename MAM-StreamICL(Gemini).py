@@ -1,4 +1,4 @@
-API_KEY_GEMINI = "AQ.Ab8RN6JkRkhU9em58zALE-Qer5If1w0wHBRlvIHclXO4PLmfGg" 
+API_KEY_GEMINI = "" 
 RUN_COUNT = 1000                # 运行前1000条数据
 MAX_MEMORY_SIZE = 1000          # 记忆库最大容量（用于检索的样本数）
 RETRIEVAL_K = 16                # 检索相似示例数量（论文ToolBench 用 16）
@@ -34,7 +34,6 @@ def gemini_15_flash(prompt):
 MODEL_LIST = [gemini_15_flash]
 MODEL_NAMES = [m.__name__ for m in MODEL_LIST]
 
-# ===================== 向量记忆库（共享记忆） =====================
 class VectorMemory:
     def __init__(self, embedding_model_name=EMBEDDING_MODEL, max_size=MAX_MEMORY_SIZE):
         self.embedder = SentenceTransformer(embedding_model_name)
@@ -149,7 +148,7 @@ def load_parquet_data(dataset_name, split, field_map, limit=RUN_COUNT):
 stream_data = load_parquet_data(DATASET_NAME, SPLIT, FIELD_MAP)
 print(f"成功加载 {len(stream_data)} 条数据\n")
 
-# ===================== MAM-StreamICL 评估 =====================
+# ===================== MAM-StreamICL 评估 
 all_extracted_sqls = []
 all_trues = []
 all_model_names = []
