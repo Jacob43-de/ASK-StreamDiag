@@ -1,4 +1,4 @@
-API_KEY_GEMINI = "AQ.Ab8RN6JkRkhU9em58zALE-Qer5If1w0wHBRlvIHclXO4PLmfGg"
+API_KEY_GEMINI = ""
 RUN_COUNT = 1000                # 运行前1000条数据
 GROW_WINDOW_SIZE = 16           # GrowPrompt 滑动窗口大小（论文默认k=16）
 
@@ -95,7 +95,7 @@ def load_parquet_data(dataset_name, split, field_map, limit=RUN_COUNT):
 stream_data = load_parquet_data(DATASET_NAME, SPLIT, FIELD_MAP)
 print(f"成功加载 {len(stream_data)} 条数据\n")
 
-# ===================== GrowPrompt=====================
+# GrowPrompt
 grow_window = []  # 存储 (question, pred_sql, is_correct)
 all_preds = []
 all_trues = []
@@ -110,8 +110,6 @@ for idx, item in enumerate(stream_data):
     
     q = item["question"]
     true_sql = item["answer"]
-    
-    # 用当前滑动窗口构建 prompt
     prompt = build_grow_prompt(q, grow_window)
     
     # 模型预测
@@ -138,7 +136,6 @@ for idx, item in enumerate(stream_data):
     if len(grow_window) > GROW_WINDOW_SIZE:
         grow_window.pop(0)  # 移除最旧的样本
     
-    # 记录结果
     all_preds.append(pred_sql)
     all_trues.append(true_sql)
     all_model_names.append(model_name)
@@ -150,7 +147,6 @@ for idx, item in enumerate(stream_data):
     print(f"正确答案：{true_sql[:100]}...")
     print(f"有效输出：{valid} | 相似度正确：{is_correct_sim}\n")
 
-# ===================== 指标计算 =====================
 similarity_correct = []
 exact_match_correct = []
 for i, (pred, true) in enumerate(zip(all_preds, all_trues)):
