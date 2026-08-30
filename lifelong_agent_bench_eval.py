@@ -11,8 +11,8 @@ from typing import Dict, List, Tuple
 from sklearn.metrics import f1_score, matthews_corrcoef
 
 # ===================== 配置参数 =====================
-API_KEY_QWEN = "sk-5a94d3c219a34ca3bccb3cd8ddeba635"
-API_KEY_ZHIPU = "2059308a2b184f0ab74f251481a7eb76.aoUQ71oedYHTX4hj"
+API_KEY_QWEN = ""
+API_KEY_ZHIPU = ""
 NUM_SELF_CONSISTENCY = 5      # 自洽采样次数
 GROUP_SIZE = 3                # 分组大小
 TASK_SEQUENCE_LENGTH = 1000    # 每个数据集截取的任务数（终身学习序列长度）
@@ -39,7 +39,7 @@ DATA_CONFIG = {
 }
 
 client_moonshot = OpenAI(
-    api_key="sk-qYmUO15MCJ8hDB7LeAoIYxEKsrCCWzgjGnp4Dq3CEDoIh78a",
+    api_key="",
     base_url="https://api.moonshot.cn/v1",
 )
 
