@@ -1,4 +1,4 @@
-API_KEY_OPENAI = "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"  
+API_KEY_OPENAI = ""  
 MAX_MEMORY = 16
 MEMORY_EVOLVE = True          # 记忆进化开关
 MODEL_EVALUATE = True         # 模型动态评分开关
@@ -44,7 +44,6 @@ def gpt_35_turbo(prompt, system_prompt=""):
         print(f"GPT-3.5-turbo模型调用失败：{str(e)}")
         return ""
 
-# 模型函数字典
 MODEL_FUNC_DICT = {
     "gpt-3.5-turbo": gpt_35_turbo
 }
@@ -214,8 +213,7 @@ def load_dataset(dataset_name: str) -> List[Dict]:
             {"question": "查询2023年的订单", "answer": "SELECT * FROM orders WHERE year = 2023"},
         ]
 
-def evaluate_model(model_name: str, dataset_name: str) -> Dict:
-    """评测指定模型在指定数据集上的所有指标"""
+def evaluate_model(model_name: str, dataset_name: str) -> Dict:"
     print(f"\n===== 评测：{MODEL_DISPLAY_NAME[model_name]} @ {dataset_name} =====")
     
     dataset = load_dataset(dataset_name)
@@ -279,7 +277,6 @@ def evaluate_model(model_name: str, dataset_name: str) -> Dict:
     print(f"评测：{result}")
     return result
 
-# 主函数：批量评测+保存CSV
 def main():
     print("="*100)
     print("Self-StreamICL(ModelRoute+MemoryEvolve) 模型评测")
