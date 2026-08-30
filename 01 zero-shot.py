@@ -1,4 +1,3 @@
-# ===================== 配置项（与第一个文件保持一致） =====================
 API_KEY_QWEN = ""
 API_KEY_ZHIPU = ""
 RUN_COUNT = 1000            
@@ -75,7 +74,6 @@ def zhipu(prompt):
 
 MODEL_LIST = [kimi, qwen, zhipu, doubao]
 
-# ===================== 辅助函数 =====================
 def sql_similarity(pred_sql, true_sql):
     pred_clean = re.sub(r'\s+', ' ', pred_sql.strip().upper())
     true_clean = re.sub(r'\s+', ' ', true_sql.strip().upper())
@@ -123,8 +121,7 @@ def load_parquet_data(dataset_name, split, field_map, limit=RUN_COUNT):
 stream_data = load_parquet_data(DATASET_NAME, SPLIT, FIELD_MAP)
 print(f"成功加载 {len(stream_data)} 条数据\n")
 
-# ===================== Zero-shot 评估，收集结果 =====================
-# 存储每个样本的预测和标签
+#Zero-shot 评估
 all_preds = []          # 模型预测的SQL字符串
 all_trues = []          # 真实SQL字符串
 all_model_names = []    # 使用的模型名称
