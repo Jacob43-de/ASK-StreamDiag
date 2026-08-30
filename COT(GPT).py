@@ -1,4 +1,4 @@
-API_KEY_OPENAI = "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"  
+API_KEY_OPENAI = ""  
 RUN_COUNT = 1000                # 运行前1000条数据
 
 import requests
@@ -29,8 +29,6 @@ def gpt_35_turbo(prompt):
         return ""
 
 MODEL_LIST = [gpt_35_turbo]
-
-# ===================== 辅助函数 =====================
 def extract_sql_from_response(response_text):
     """
     从 CoT 回答中提取 SQL 语句。
