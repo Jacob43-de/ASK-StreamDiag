@@ -1,6 +1,6 @@
 # ===================== 配置项（与第一个文件保持一致） =====================
-API_KEY_QWEN = "sk-5a94d3c219a34ca3bccb3cd8ddeba635"
-API_KEY_ZHIPU = "2059308a2b184f0ab74f251481a7eb76.aoUQ71oedYHTX4hj"
+API_KEY_QWEN = ""
+API_KEY_ZHIPU = ""
 RUN_COUNT = 1000            
 
 import requests
@@ -14,7 +14,7 @@ import numpy as np
 from sklearn.metrics import f1_score, matthews_corrcoef
 
 client = OpenAI(
-    api_key="sk-qYmUO15MCJ8hDB7LeAoIYxEKsrCCWzgjGnp4Dq3CEDoIh78a",
+    api_key="",
     base_url="https://api.moonshot.cn/v1",
 )
 
