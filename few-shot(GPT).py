@@ -1,4 +1,4 @@
-API_KEY_OPENAI = "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" 
+API_KEY_OPENAI = "" 
 FEW_SHOT_NUM = 3                # 少样本示例数量
 RUN_COUNT = 1000                # 运行前1000条数据
 
