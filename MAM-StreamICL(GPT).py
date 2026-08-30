@@ -1,4 +1,4 @@
-API_KEY_OPENAI = "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" 
+API_KEY_OPENAI = "" 
 RUN_COUNT = 1000                # 运行前1000条数据
 MAX_MEMORY_SIZE = 1000          # 记忆库最大容量（用于检索的样本数）
 RETRIEVAL_K = 16                # 检索相似示例数量（论文ToolBench 用 16）
@@ -49,11 +49,10 @@ class VectorMemory:
     def reset(self):
         """清空记忆"""
         self.index = faiss.IndexFlatIP(self.dimension)  # 内积相似度
-        self.memory_items = []  # 存储 (question, sql) 元组
+        self.memory_items = []  
         self.question_embeddings = []
 
     def add(self, question, sql):
-        """添加一个正确样本到记忆库"""
         if len(self.memory_items) >= self.max_size:
             # 移除最旧的
             self.memory_items.pop(0)
@@ -73,14 +72,12 @@ class VectorMemory:
             self.index.add(emb.reshape(1, -1))
 
     def _rebuild_index(self):
-        """重建索引（当删除旧项时）"""
         self.index = faiss.IndexFlatIP(self.dimension)
         if self.question_embeddings:
             all_embs = np.vstack(self.question_embeddings)
             self.index.add(all_embs)
 
     def retrieve(self, question, k=RETRIEVAL_K):
-        """检索与当前问题最相似的 k 个示例"""
         if len(self.memory_items) == 0:
             return []
         emb = self.embedder.encode(question, normalize_embeddings=True).reshape(1, -1)
@@ -105,7 +102,6 @@ def exact_match(pred_sql, true_sql):
     return pred_clean == true_clean
 
 def build_few_shot_prompt(question, examples):
-    """构建带有检索示例的 prompt"""
     example_text = ""
     for ex_q, ex_sql in examples:
         example_text += f"用户问题：{ex_q}\nSQL语句：{ex_sql}\n\n"
@@ -153,7 +149,7 @@ def load_parquet_data(dataset_name, split, field_map, limit=RUN_COUNT):
 stream_data = load_parquet_data(DATASET_NAME, SPLIT, FIELD_MAP)
 print(f"成功加载 {len(stream_data)} 条数据\n")
 
-# ===================== MAM-StreamICL 评估 =====================
+#  MAM-StreamICL 评估 
 all_extracted_sqls = []
 all_trues = []
 all_model_names = []
