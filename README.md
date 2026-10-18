@@ -1,316 +1,285 @@
-# ASK-StreamDiag: Fine-Grained Streaming Failure Diagnosis for LLMs
+# ASK-StreamDiag
 
-> **Atomic Subtask diagnosis + Knowledge-boundary classification for Stream**ing Diag**nosis
+**Fine-Grained Streaming Failure Diagnosis for LLMs via Atomic Subtasks and Prompt-Perturbation Knowledge Boundaries**
 
-A fine-grained streaming evaluation framework that decomposes complex code, medical diagnosis, and tool-use tasks into domain-specific atomic subtasks, then classifies each failure as MSU (Missing/Unrecoverable knowledge) or PSK (Prompt-Sensitive Knowledge) via standardized prompt perturbation, enabling targeted adaptive routing and repair.
+Companion code for the manuscript *"ASK-StreamDiag: Fine-Grained Streaming Failure Diagnosis for LLMs via Atomic Subtasks and Prompt-Perturbation Knowledge Boundaries"* (submitted to **Mathematics**, MDPI, 2026).
+
+**ASK-StreamDiag** replaces coarse-grained binary pass/fail evaluation of streaming LLM agents with a fine-grained diagnostic pipeline. Each task is decomposed into domain-specific **atomic subtasks**, a judge LLM audits every subtask independently, and each failed subtask is classified as either **MSU** (model-specific unknown — the failure persists across tested prompt variants) or **PSK** (prompt-sensitive known — the failure varies across variants), enabling targeted adaptive routing and repair instead of blindly upgrading every failure to a stronger model.
 
 ---
 
 ## Table of Contents
 
-- [Project Structure](project-structure)
-- [Datasets](datasets)
-- [Experiments](experiments)
-  - [1. Main Experiment](1-main-experiment)
-  - [2. Ablation Experiment](2-ablation-experiment)
-  - [3. Analysis Experiments](3-analysis-experiments)
-- [Result Files](result-files)
-- [Quick Start](quick-start)
-- [Key Findings](key-findings)
+- [Highlights](#highlights)
+- [Pipeline overview](#pipeline-overview)
+- [Repository structure](#repository-structure)
+- [Datasets](#datasets)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Quick start](#quick-start)
+- [Scoring metrics](#scoring-metrics)
+- [Reproducing the tables and figures](#reproducing-the-tables-and-figures)
+- [Main results](#main-results)
+- [Hyperparameters](#hyperparameters)
+- [Reproducibility notes](#reproducibility-notes)
+- [Citation](#citation)
+- [License](#license)
 
 ---
 
-## Project Structure
+## Highlights
+
+- **81.25% per-subtask diagnostic accuracy** against human-annotated gold labels (300 labelled failed instances, Cohen's $\kappa$ and Krippendorff's $\alpha$ reported in the paper).
+- **Task completion rate raised from 70.0% (binary feedback) to 88.5%**, and an **81.5% post-failure repair success rate at only 1.6x the baseline inference cost** (vs. 73.4% at 3.2x for routing every failure to a stronger model).
+- Evaluated on **three public benchmarks** (DS-1000, DDXPlus, ToolBench) and **six target LLMs** (Qwen-turbo, Kimi-k2.6, Zhipu GLM-4, DouBao-seed-2.0-lite, GPT-3.5-turbo, Gemini-2.5-flash), against **seven baseline methods** (Zero Shot, Few Shot, CoT, GrowPrompt, MAM-StreamICL, Evo-Memory, LifelongAgentBench).
+- Complete budget-matched controls (Table 7), MSU/PSK repair analysis (Section 5.10), threshold/granularity/judge-round ablations, and cross-domain generalization experiments.
+
+---
+
+## Pipeline overview
+
+The framework (paper Sections 3–4) runs as four sequential stages:
+
+1. **Atomic Subtask Decomposition** — a dispatcher (GPT-3.5-turbo) selects and instantiates the relevant subtasks from a fixed, pre-defined domain taxonomy. The taxonomy is fixed before model inference and is not learned from the models being evaluated.
+2. **Subtask Judge Evaluation** — a single judge LLM (GPT-4, temperature 0.2) independently scores each subtask and emits structured JSON diagnostic feedback (correctness + error attribution).
+3. **Knowledge Boundary Classification** — failed subtasks are re-tested under `P` prompt perturbations (instruction paraphrases, added few-shot exemplars, format constraints). A success rate at or below `tau_low = 0.2` is labelled **MSU**; a rate at or above `tau_high = 0.8` is labelled **PSK**; intermediate cases are labelled reliable/uncertain.
+4. **Adaptive Routing / Repair** — MSU failures are routed to a stronger model; PSK failures are repaired by prompt rewriting. Verified solved exemplars enter a streaming memory buffer of size `M = 16`.
+
+> **Scope note (paper Sections 4.2 and 5.8).** MSU/PSK are operational labels: they mean "persistent under the tested perturbation budget" versus "prompt-sensitive within that budget", not a claim that the model's parameters contain no knowledge whatsoever. The implementation uses a **single** judge; the Dawid–Skene multi-judge equation in Section 4 is included only as a theoretical reference.
+
+---
+
+## Repository structure
 
 ```
-streambench/
-├── data/                              # Benchmark datasets (parquet format)
-│   ├── ds_1000/                      # DS-1000: Python code generation (1,000 samples)
-│   ├── ddxplus/                      # DDXPlus: Medical diagnosis (1,200 samples)
-│   ├── toolbench/                    # ToolBench: Tool/API invocation (800 samples)
-│   ├── spider/                       # Spider: Text-to-SQL
-│   ├── bird/                         # BIRD: Text-to-SQL
-│   ├── cosql/                        # CoSQL: Conversational text-to-SQL
-│   ├── hotpotqa_distract/            # HotpotQA: Multi-hop QA
-│   └── dev_20240627/                 # Spider dev set
+ASK-StreamDiag/
+├── data/                                  # Benchmark datasets (parquet, not committed)
+│   ├── ds_1000/test-*.parquet
+│   ├── ddxplus/test-*.parquet
+│   └── toolbench/test-*.parquet
 │
-├── 01 zero-shot.py                    # Zero-shot baseline
-├── 02 few-shot.py                     # Few-shot baseline
-├── 03 CoT.py                          # Chain-of-Thought baseline
-├── 04 Self-StreamICL.py              # Self-StreamICL method
-├── 05 MAM-StreamICL.py               # MAM-StreamICL method
-├── Ablation and Analysis experiment.py # Ablation + analysis experiments
-├── Growprompt.py                      # GrowPrompt baseline
-├── evo_memory_eval.py                 # Evo-Memory baseline
-├── lifelong_agent_bench_eval.py       # LifelongAgentBench baseline
-├── COT(Gemini).py / COT(GPT).py      # Model-specific CoT variants
-├── few-shot(Gemini).py / few-shot(GPT).py
-├── Growprompt(Gemini).py / Growprompt（GPT）.py
-├── MAM-StreamICL(Gemini).py / MAM-StreamICL(GPT).py
-├── Self-StreamICL(GPT).py / Self-StreamICL（Gemini）.py
-├── Self-streamICL(Exactmatch...).py
-├── 新增分析实验1.py / 新增分析实验2.py / 新增分析实验3.py  # Additional analysis scripts
-├── 画图代码1.py / 画图代码2.py / 画图代码3.py / 画图4.py / 画图5.py  # Visualization scripts
+├── 01 zero-shot.py                        # Zero Shot baseline
+├── 02 few-shot.py                         # Few Shot baseline (k=3)
+├── 03 CoT.py                              # Chain-of-Thought baseline
+├── 04 Self-StreamICL.py                   # Self-StreamICL (M=16, memory evolution)
+├── 05 MAM-StreamICL.py                    # MAM-StreamICL (top-k=16 retrieval, FAISS+BGE)
+├── Growprompt.py                          # GrowPrompt streaming baseline
+├── evo_memory_eval.py                     # Evo-Memory baseline
+├── lifelong_agent_bench_eval.py           # LifelongAgentBench baseline
+├── Ablation and Analysis experiment.py    # Full ASK-StreamDiag pipeline + ablations
 │
-├── results/                           # === EXPERIMENT RESULT FILES ===
-│   ├── main_experiment_results.csv    # Main experiment (Table 6) - CSV
-│   ├── main_experiment_results.txt    # Main experiment (Table 6) - formatted TXT
-│   ├── ablation_experiment_results.csv # Ablation experiment (Table 10) - CSV
-│   ├── ablation_experiment_results.txt # Ablation experiment (Table 10) - formatted TXT
-│   ├── analysis_experiment_results.csv # Analysis experiments (Tables 11-17) - CSV
-│   └── analysis_experiment_results.txt # Analysis experiments (Tables 11-17) - formatted TXT
+├── * (GPT).py / * (Gemini).py             # Per-target-model variants of the baselines
 │
-├── generate_results.py                # Script to regenerate all result files
-├── Figure_1.pdf ~ Figure7_line.pdf    # Paper figures
-├── fig_*.png / fig_*.pdf              # Additional visualization outputs
-└── README.md                          # This file
+├── 新增分析实验1.py                        # Error-distribution analysis figure
+├── 新增分析实验2.py                        # MSU/PSK repair-effectiveness figure
+├── 新增分析实验3.py                        # Cost–diagnostic-depth trade-off figure
+├── 画图代码1.py / 画图代码3.py / 画图4.py / 画图5.py   # Paper Figures 3/4/6/7
+│
+├── generate_results.py                    # Aggregates recorded runs into result CSVs/TXTs
+│
+├── gemini25_flash_rerun/                  # Clean re-implementation (Gemini-2.5-flash target)
+│   ├── common/
+│   │   ├── gemini_client.py               # Gemini HTTP client (retry / timeout / proxy)
+│   │   ├── openai_clients.py              # GPT-4 judge + GPT-3.5 dispatcher clients
+│   │   ├── data_loader.py                 # Unified parquet loader
+│   │   ├── scorer.py                      # Answer extraction + ACC/EM/F1/MCC scoring
+│   │   └── prompts.py                     # Domain prompt and subtask templates
+│   ├── run_zero_shot.py / run_few_shot.py / run_cot.py
+│   ├── run_growprompt.py / run_self_streamicl.py / run_mam_streamicl.py
+│   ├── run_evo_memory.py / run_lifelong_agent_bench.py
+│   ├── ask_streamdiag_gemini.py           # Full ASK-StreamDiag pipeline
+│   ├── run_budget_controls.py             # Table 7 budget-matched controls
+│   ├── run_all_gemini25.py                # One-click 8 methods x 3 datasets
+│   └── test_dry_run.py                    # Offline self-test (mock, no API calls)
+│
+├── results/                               # Result tables (Table 6 / Table 7, ...)
+├── requirements.txt
+└── README.md
 ```
 
 ---
 
 ## Datasets
 
-| Dataset | Domain | Samples | #Atomic Subtasks | Metrics |
-|---------|--------|----------|-------------------|---------|
-| DS-1000 | Python code generation | 1,000 | 4 | ACC, EM, F1, MCC |
-| DDXPlus | Clinical medical diagnosis | 1,200 | 5 | ACC, EM, F1, MCC |
-| ToolBench | Tool/API invocation | 800 | 4 | ACC, EM, F1, MCC |
+| Dataset | Domain | Paper samples | Atomic subtasks | Evaluated by |
+|---|---|---|---|---|
+| **DS-1000** | Python data-science code generation | 1,000 | 4 | ACC / EM / F1 / MCC |
+| **DDXPlus** | Clinical differential diagnosis | 1,200 | 5 | ACC / EM / F1 / MCC |
+| **ToolBench** | Tool / API invocation | 800 | 4 | ACC / EM / F1 / MCC |
 
-Atomic Subtask Taxonomy:
-- DS-1000: Algorithm Understanding → Control Flow → Variable/Data Structure → Syntax/Output Formatting
-- DDXPlus: Symptom Interpretation → Differential Diagnosis → Risk Factor Weighting → Final Diagnosis Selection → Justification Quality
-- ToolBench: Intent Recognition → Parameter Extraction → API Call Syntax → Result Interpretation
+**Atomic subtask taxonomy (paper Section 5.1):**
 
----
+- **DS-1000 (4):** algorithmic comprehension, control-flow rationality, variable/data-structure specification, grammatical syntax / output-format compliance.
+- **DDXPlus (5):** symptom comprehension, differential disease enumeration, risk-factor weighting, definitive diagnosis determination, diagnostic justification validity.
+- **ToolBench (4):** user-intent identification, parameter-value extraction, standardized calling syntax, returned-content semantic parsing.
 
-## Experiments
+**Parquet schema used by the loader (`common/data_loader.py`):**
 
-### 1. Main Experiment
+| Dataset | Question column | Gold column | Eval type | Notes |
+|---|---|---|---|---|
+| `ds_1000` | `prompt` | `reference_code` | `code` | also `metadata`, `code_context` |
+| `ddxplus` | `PATIENT_PROFILE` | `PATHOLOGY` | `text` | also `EVIDENCES_ENG`, `DIFFERENTIAL_DIAGNOSIS` |
+| `toolbench` | `query` | `api_name` | `json` | `api_input` stored as auxiliary gold |
 
-Objective: Benchmark ASK-StreamDiag against 7 baseline methods across 6 LLMs and 3 datasets.
-
-Methods compared:
-- Streaming baselines: Evo-Memory, LifelongAgentBench
-- ASK-StreamDiag (ours): ModelRoute + MemoryEvolve
-- Prompting baselines: Zero-Shot, Few-Shot, CoT, GrowPrompt, MAM-StreamICL
-
-LLMs evaluated: Qwen, Kimi-k2.6, Zhipu GLM-4, DouBao-seed-2.0-lite, GPT-3.5-turbo, Gemini-1.5-flash
-
-Metrics: Post-repair Accuracy (ACC), Exact Match (EM), F1 Score, Matthews Correlation Coefficient (MCC)
-
-Key results (Kimi-k2.6 on DS-1000):
-
-| Method | ACC | EM | F1 | MCC |
-|--------|-----|-----|-----|-----|
-| Evo-Memory | 0.615 | 0.585 | 0.608 | 0.575 |
-| LifelongAgentBench | 0.645 | 0.620 | 0.640 | 0.615 |
-| ASK-StreamDiag | 0.880 | 0.585 | 0.900 | 0.850 |
-| CoT | 0.856 | 0.720 | 0.922 | 0.790 |
-| MAM-StreamICL | 0.788 | 0.632 | 0.881 | 0.664 |
-
-> ASK-StreamDiag achieves the highest F1 (0.900) and MCC (0.850), substantially elevating EM on format-sensitive tasks through judge-LLM-triggered syntax correction.
-
-Result files:
-- `results/main_experiment_results.csv`
-- `results/main_experiment_results.txt`
----
-
-### 2. Ablation Experiment
-
-Objective: Isolate the contribution of each framework component.
-
-Setup: Mixed dataset of 200 heterogeneous tasks, Kimi-k2.6 as target backbone, GPT-4 as judge LLM.
-
-Configurations:
-
-| Configuration | Avg. Diagnostic Accuracy | Task Completion |
-|---------------|--------------------------|-----------------|
-| Full Model | 81.25% | 88.5% |
-| No Decomposition | N/A | 70.0% |
-| No MSU/PSK Classification | 80.75% | 79.0% |
-| No Routing | 81.00% | 81.5% |
-
-Analysis:
-- Full model achieves 88.5% task completion, +18.5% over no decomposition (70.0%)
-- Removing MSU/PSK classification drops completion to 79.0%(-9.5%), confirming knowledge boundary classification value
-- No Routing retains 81.0% diagnostic accuracy but completion drops to 81.5%, proving diagnostic information alone is insufficient without actionable remediation
-- **Both fine-grained decomposition AND targeted routing are essential**
-
-Result files:
-- `results/ablation_experiment_results.csv`
-- `results/ablation_experiment_results.txt`
+Download the three public benchmarks from their official releases (DS-1000: Lai et al. 2022; DDXPlus: Van Ness et al., NeurIPS 2022 Datasets & Benchmarks; ToolBench: Qin/Tang et al. 2023), convert/keep them in the test-parquet layout above, and place them under `data/`.
 
 ---
 
-### 3. Analysis Experiments
-Objective: Multi-dimensional analysis of hyperparameters, task attributes, and cross-model interactions. All on the same 200-task mixed dataset with Kimi-k2.6.
+## Installation
 
-#### 3.1 Impact of Dialogue Rounds (Table 11)
-
-| Judge Rounds | Diagnostic Acc | MSU/PSK Acc | Avg Judge Calls | Latency (s) | Relative Cost |
-|:---:|:---:|:---:|:---:|:---:|:---:|
-| 0 | 78.0% | 72.5% | 0.0 | 12.3 | 0.7x |
-| 1 | 81.3% | 76.8% | 1.0 | 18.7 | 1.0x |
-| 2 | 84.7% | 80.1% | 1.6 | 23.5 | 1.4x |
-| 3 | 87.0% | 82.3% | 2.2 | 28.1 | 1.7x |
-
-> Accuracy climbs from 78.0% to 87.0%, but **marginal gain decays beyond 2 rounds**.
-
-#### 3.2 Effect of Sub-task Granularity (Table 13)
-
-| #Sub-tasks | Diagnostic Acc | Completion (Full) | Completion (No MSU/PSK) | Completion (No Routing) |
-|:---:|:---:|:---:|:---:|:---:|
-| 0 (No Decomp.) | 70.0% | 70.0% | 70.0% | 70.0% |
-| 1 | 77.0% | 76.2% | 73.0% | 73.8% |
-| 2 | 80.0% | 82.3% | 76.0% | 77.7% |
-| 3 | 81.0% | 88.5% | 79.0% | 81.5% |
-| 4 | 80.0% | 87.5% | 78.5% | 81.0% |
-
-> Optimal granularity = 3 sub-tasks (81.0% diagnostic acc, 88.5% completion). Excessive splitting (4) causes mild decline due to cognitive load and cascading error propagation.
-
-#### 3.3 Effect of Input Token Length (Table 14)
-
-| Token Bin | Samples | Diagnostic Acc | Judge-Human Agreement | Task Completion |
-|:---:|:---:|:---:|:---:|:---:|
-| <200 | 72 | 82.0% | 83.5% | 90.0% |
-| 200–400 | 86 | 76.5% | 77.8% | 87.5% |
-| >400 | 42 | 68.0% | 69.2% | 83.0% |
-
-> Clear degenerative trend: 82.0% → 68.0% as input length grows. Atomic subtask decomposition partially alleviates the length penalty.
-
-#### 3.4 Threshold Sensitivity (Table 16)
-
-tau_low sweep (tau_high fixed = 0.8):
-
-| tau_low | 0.1 | 0.2 | 0.3 |
-|:---:|:---:|:---:|:---:|
-| Classification Acc | 76.2% | **80.9%** | 77.1% |
-
-tau_high sweep (tau_low fixed = 0.2):
-
-| tau_high | 0.7 | 0.8 | 0.9 |
-|:---:|:---:|:---:|:---:|
-| Classification Acc | 78.5% | 80.9% | 77.8% |
-
-> Optimal: tau_low = 0.2, tau_high = 0.8 (80.9% accuracy). tau_low exhibits a sharper performance peak, indicating its critical role in distinguishing genuine knowledge gaps (MSU) from prompt-sensitive failures (PSK).
-
-#### 3.5 Cross-domain Generalization (Table 17)
-
-| Train Dataset | Test DS-1000 | Test DDXPlus | Test ToolBench | Average |
-|:---:|:---:|:---:|:---:|:---:|
-| DS-1000 | 81.25% | 74.32% | 76.18% | 77.25% |
-| DDXPlus | 73.91% | 80.87% | 75.04% | 76.61% |
-| ToolBench | 75.26% | 74.89% | 81.02% | 77.06% |
-
-> Peak in-domain accuracy ~81%. Cross-domain decline is **5–7%**, but sustained above 73%. Domain-adaptive decomposition templates recommended for multi-scenario deployment.
-
-#### 3.6 MSU/PSK Repair Effectiveness (Figure 9)
-
-| Strategy | MSU Success | PSK Success | Overall Success | Relative Cost |
-|:---:|:---:|:---:|:---:|:---:|
-| All-Prompt | 17.2% | 78.3% | 47.8% | 1.0x |
-| All-Route | 84.7% | 62.1% | 73.4% | 3.2x |
-| Random | 51.0% | 70.2% | 60.6% | 1.8x |
-| Ours | 84.7% | 78.3% | 81.5% | 1.6x |
-
-> Ours achieves 81.5% overall repair success with only 1.6x cost.** MSU failures → model routing (84.7%), PSK failures → prompt optimization (78.3%). 150 initial failures classified into 75 MSU + 75 PSK.
-
-#### 3.7 Cost–Diagnostic Depth Trade-off (Figure 10)
-
-| Paradigm | Normalized Cost | Diagnostic Depth | Repair Success |
-|:---|:---:|:---:|:---:|
-| Binary Feedback | 1.0x | 0 | 0% |
-| Overall Judge | 1.3x | 1 | 0% |
-| Ours w/o MSU/PSK | 1.5x | 2 | 0% |
-| Ours Full | 1.8x | 3 | 0% |
-| Ours Full + Routing | 2.4x | 4 | 88.5% |
-
-> Ours Full (cost=1.8x, depth=3) achieves 200% diagnostic depth improvement** over baselines. Full+Routing delivers 88.5% task completion. Flexible configuration from lightweight binary to full-process diagnostic repair.
-
-Result files:
-- `results/analysis_experiment_results.csv`
-- `results/analysis_experiment_results.txt`
-
----
-
-## Result Files
-
-All experimental results are stored in the `results/` directory:
-
-| File | Description | Corresponding Paper Table |
-|------|-------------|---------------------------|
-| `results/main_experiment_results.csv` | Main experiment: 6 LLMs × 8 methods × 3 datasets × 4 metrics | Table 6 |
-| `results/main_experiment_results.txt` | Formatted text version of main experiment | Table 6 |
-| `results/ablation_experiment_results.csv` | Ablation: 4 configurations × diagnostic accuracy × task completion | Table 10 |
-| `results/ablation_experiment_results.txt` | Formatted text version of ablation experiment | Table 10 |
-| `results/analysis_experiment_results.csv` | Analysis: 7 sub-experiments (dialogue rounds, granularity, token length, thresholds, cross-domain, repair, cost) | Tables 11–17, Figures 9–10 |
-| `results/analysis_experiment_results.txt` | Formatted text version of analysis experiments | Tables 11–17, Figures 9–10 |
-
-To regenerate all result files:
 ```bash
-python generate_results.py
+git clone https://github.com/Jacob43-de/ASK-StreamDiag.git
+cd ASK-StreamDiag
+python -m venv .venv
+# Windows PowerShell: .venv\Scripts\Activate.ps1
+# Linux/macOS:        source .venv/bin/activate
+python -m pip install -r requirements.txt
+```
+
+Tested with Python 3.10–3.14. The core requirements are `requests`, `openai`, `numpy`, `pandas`, `pyarrow`, `scikit-learn`, `matplotlib`, `seaborn`. The original `05 MAM-StreamICL.py` additionally needs `faiss-cpu` and `sentence-transformers` (listed, commented out, in `requirements.txt`; the `gemini25_flash_rerun/` re-implementation uses SequenceMatcher retrieval and does not need them).
+
+---
+
+## Configuration
+
+No API key is hard-coded anywhere. Keys are read from environment variables.
+
+| Variable | Required for | Purpose |
+|---|---|---|
+| `OPENAI_API_KEY` | GPT-4 judge, GPT-3.5 dispatcher, GPT-3.5 target | OpenAI-compatible API key |
+| `OPENAI_BASE_URL` | optional | Custom OpenAI-compatible endpoint (proxy / relay) |
+| `GEMINI_API_KEY` | Gemini-2.5-flash target | Google Gemini API key |
+| `QWEN_API_KEY` | Qwen-turbo target | DashScope API key |
+| `MOONSHOT_API_KEY` | Kimi-k2.6 target | Moonshot API key |
+| `ZHIPU_API_KEY` | GLM-4 target | Zhipu API key |
+| `ARK_API_KEY` | DouBao-seed-2.0-lite target | Volcano Engine ARK key |
+| `HTTP_PROXY` / `HTTPS_PROXY` | optional | Standard proxy variables, read by `requests` |
+
+PowerShell example:
+
+```powershell
+$env:OPENAI_API_KEY = ""
+$env:GEMINI_API_KEY = ""
 ```
 
 ---
 
-## Quick Start
+## Quick start
 
-### Prerequisites
-```bash
-pip install pandas pyarrow openai requests
+### Offline self-test (no API calls, no cost)
+
+```powershell
+cd gemini25_flash_rerun
+python test_dry_run.py
 ```
 
-### Running Experiments
+### Single method on a single dataset
+
+```powershell
+cd gemini25_flash_rerun
+python run_zero_shot.py --dataset ds_1000 --limit 1000 --output-dir .
+python ask_streamdiag_gemini.py --dataset toolbench --limit 750 --output-dir .
+```
+
+### All eight methods on all three datasets
+
+```powershell
+python run_all_gemini25.py --output-dir . --limit 1000
+```
+
+### Budget-matched controls (paper Table 7)
+
+```powershell
+# Formula-derived rows only, no API calls:
+python run_budget_controls.py --output-dir . --formula-only
+# Full run including the Binary+GPT4-Judge control:
+python run_budget_controls.py --output-dir . --limit 1000
+```
+
+### Original scripts (other target LLMs)
+
+The original scripts at the repository root each target one model family (Qwen/Kimi/Zhipu/DouBao by default, or the `(GPT)` / `(Gemini)` variants):
 
 ```bash
-# Baseline methods
 python "01 zero-shot.py"
 python "02 few-shot.py"
 python "03 CoT.py"
-
-# Streaming methods
 python "04 Self-StreamICL.py"
 python "05 MAM-StreamICL.py"
-
-# Ablation + Analysis
 python "Ablation and Analysis experiment.py"
-
-# Baseline streaming methods
-python evo_memory_eval.py
-python lifelong_agent_bench_eval.py
 ```
 
-### Configuration
-Set API keys in each script:
-- `OPENAI_API_KEY` — GPT-4 Judge LLM
-- `QWEN_API_KEY` — Qwen
-- `MOONSHOT_API_KEY` — Kimi-k2.6
-- `ZHIPU_API_KEY` — Zhipu GLM-4
-- `ARK_API_KEY` (env) — DouBao-seed-2.0-lite
-
-Hyperparameters:
-- Memory size M = 16
-- Prompt perturbation variants = 3–4
-- tau_low = 0.2, tau_high = 0.8
-- Max judge dialogue rounds = 3
-- Optimal sub-tasks = 3
+**Outputs:** per-task raw predictions are written to `raw_outputs/<method>_<dataset>.jsonl` with fields `index`, `method`, `dataset`, `question`, `gold`, `raw_response`, `extracted_answer`, `valid`, `acc_correct`, `em_correct`, and timing. Every record is flushed immediately, so completed indices are skipped automatically when a run is resumed. Aggregated tables are written to `table6_gemini25_flash.csv` / `table7_gemini25_flash.csv`.
 
 ---
 
-## Key Findings
+## Scoring metrics
 
-1. Fine-grained subtask diagnosis drives recovery, not stronger external LLMs. Controlled budget-matched experiments confirm the diagnostic module is the primary contributor.
+The metrics follow paper Section 5.6 and are implemented in `gemini25_flash_rerun/common/scorer.py`.
 
-2. MSU/PSK classification enables cost-effective repair. Routing MSU failures to stronger models and optimizing prompts for PSK failures achieves 81.5% repair success at only 1.6x cost, vs. 3.2x for routing everything.
+- **ACC (accuracy).** Answers are normalized before comparison:
+  - *code* (`DS-1000`): fenced code block extraction (falling back to `SELECT`/`def` heuristics), uppercasing, whitespace collapsing; correct when `SequenceMatcher(pred, gold).ratio() > 0.7`.
+  - *text* (`DDXPlus`): `strip().lower()` then the same `SequenceMatcher` similarity threshold of 0.7.
+  - *json* (`ToolBench`): the predicted `api_name` is extracted and compared with the gold API name after lower-casing — exact API-name match.
+- **EM (exact match).** The normalized prediction is byte-identical to the normalized reference (`DS-1000`, `DDXPlus`), or the predicted API name equals the gold API name (`ToolBench`). EM is the stricter metric: it is always **bounded above by ACC** on the same outputs.
+- **F1 / MCC.** Macro F1 and the multi-class Matthews correlation coefficient over answer classes, as reported in the paper tables.
 
-3. Optimal decomposition = 3 atomic subtasks. Beyond 3, cognitive load and cascading errors cause marginal decline.
-
-4. ASK-StreamDiag excels at strict metrics (EM, F1, MCC). On DS-1000 with Kimi-k2.6: F1=0.900, MCC=0.850, substantially outperforming all baselines.
-
-5. Cross-domain transfer is stable. Despite 5–7% in-domain vs cross-domain gap, accuracy remains above 73%, validating the generality of atomic subtask decomposition.
-
-6. Two judge rounds suffice for cost-effective deployment. Marginal accuracy gain decays significantly beyond 2 rounds of adversarial interrogation.
+> **Scoring alignment note.** The archived `common/scorer.py` computes F1/MCC with the all-positive-reference convention (`f1_score([1]*n, correctness)` / `matthews_corrcoef([1]*n, correctness)`), which matches the original run logs' binary-correctness computation but does not emit the multi-class MCC of Section 5.6. Align this function to the multi-class answer-label implementation before relying on the code for the F1/MCC columns; ACC and EM are unaffected.
 
 ---
 
-*Paper: ASK-StreamDiag: Fine-Grained Streaming Failure Diagnosis for LLMs via Atomic Subtasks and Prompt-Perturbation Knowledge Boundaries*
+## Reproducing the tables and figures
+
+| Paper element | Source script / file |
+|---|---|
+| Table 6 (main results, 8 methods x 6 models x 3 datasets) | `run_all_gemini25.py` (Gemini target) / root scripts (other models); `results/main_experiment_results.csv`; `generate_results.py` aggregates recorded runs |
+| Table 7 (budget-matched controls) | `gemini25_flash_rerun/run_budget_controls.py`; `results/table7_gemini25_flash.csv` |
+| Tables 8–9 (raw pre-repair ACC / EM) | Zero-Shot rows of the same Table 6 runs (values identical to the Zero-Shot rows) |
+| Ablation tables (no-decomposition / no-classification / no-routing; granularity K) | `Ablation and Analysis experiment.py`; `results/ablation_experiment_results.csv` |
+| Threshold sweep (`tau_low`/`tau_high`), judge rounds, token length, cross-domain | `Ablation and Analysis experiment.py`; `results/analysis_experiment_results.csv` |
+| Figure 3 (cross-task ACC), Figure 4 (cross-task EM) | `画图代码1.py`, `画图代码3.py` |
+| Figure 6 (threshold sweep) | `画图4.py` |
+| Figure 7 (cross-domain generalization) | `画图5.py` |
+| Error-distribution / repair / cost-depth figures | `新增分析实验1.py`, `新增分析实验2.py`, `新增分析实验3.py` |
+
+Figures 3 and 4 plot the raw pre-repair Zero-Shot values; intermediate K points in the granularity figure (K = 1, 2, 4) are linearly interpolated trend indicators — only K = 0 and K = 3 were executed on the 200-task ablation set.
+
+---
+
+## Main results
+
+- **Per-subtask diagnosis:** 81.25% agreement with human gold labels across the three domains.
+- **Task completion:** 70.0% under binary feedback → 88.5% with the full pipeline.
+- **Repair effectiveness:** 81.5% overall repair success at 1.6x baseline cost; All-Route (route every failure to GPT-4) reaches only 73.4% at 3.2x cost; All-Prompt 47.8% at 1.0x; Random 60.6% at 1.8x.
+- **Strict metrics:** on DS-1000 with Kimi-k2.6, ASK-StreamDiag attains F1 = 0.900 and MCC = 0.850.
+- **Cross-domain transfer:** 6–9% in-domain to cross-domain gap; accuracy stays above 73% on every transfer pair.
+- **Best decomposition granularity:** three atomic subtasks; two judge rounds capture most of the gain; optimal thresholds `tau_low = 0.2`, `tau_high = 0.8` (80.9% classification accuracy).
+
+---
+
+## Hyperparameters
+
+| Component | Setting |
+|---|---|
+| Memory size `M` | 16 |
+| Prompt perturbation variants `P` | 4 (configurable via `--p-variants`) |
+| MSU threshold `tau_low` | 0.2 |
+| PSK threshold `tau_high` | 0.8 |
+| Max judge dialogue rounds | 3 |
+| Best decomposition granularity | 3 subtasks |
+| Judge LLM | GPT-4, temperature 0.2 |
+| Dispatcher LLM | GPT-3.5-turbo, temperature 0.0 |
+| Target models | Qwen-turbo, Kimi-k2.6, Zhipu GLM-4, DouBao-seed-2.0-lite, GPT-3.5-turbo, Gemini-2.5-flash |
+
+---
+
+## Reproducibility notes
+
+1. **Data path.** `common/data_loader.py` and the root scripts currently contain an absolute `DATA_BASE`/`DATASET_PATH` constant pointing at the local data directory. Change it to your own `data/` folder before running.
+2. **Sample counts.** The paper reports 1,000 / 1,200 / 800 evaluated instances for DS-1000 / DDXPlus / ToolBench; the public parquet releases contain 1,000 / 1,764 / 750 rows respectively. The loader caps each dataset with `--limit` (DDXPlus is truncated to the first 1,000; all 750 ToolBench rows are used). Set the sample size explicitly when reproducing a specific table.
+3. **MAM retrieval.** The original MAM-StreamICL uses FAISS + `BAAI/bge-base-en-v1.5`; the `gemini25_flash_rerun/` re-implementation uses SequenceMatcher string-similarity retrieval (top-k = 16, only correct exemplars stored). Core logic is identical; the retriever is the only difference.
+4. **Dry-run values are not paper values.** `test_dry_run.py` uses mock annotations and never contacts an API; its output must not be used for reported results.
+5. **No hard-coded keys.** Every script reads credentials from environment variables; no real network request is made unless the corresponding key is set.
+6. **Budget controls.** The `Binary+GPT4-Routing` and `Oracle-Routing` rows of Table 7 are formula-derived (`routing = zs + (1-zs) * 0.734`, `oracle = zs + (1-zs) * 0.815`); `Binary+GPT4-Judge` is a real control run rebuilt from the paper's description.
+
+---
