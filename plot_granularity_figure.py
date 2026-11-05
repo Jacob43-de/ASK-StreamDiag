@@ -1,71 +1,35 @@
+import os
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
 
-X = [0, 1, 2, 3, 4]
-MEASURED = {0, 3}
+K = [0, 3]
+full = [70.0, 87.5]
+nomsu = [70.0, 79.0]
+norout = [70.0, 81.5]
 
-SERIES = [
-    ("Diagnostic Accuracy",        "#d65043", "o", [70.0, 77.0, 80.0, 81.0, 80.0]),
-    ("Task Completion - Full Model", "#3d85ad", "s", [70.0, 76.2, 82.3, 88.5, 87.5]),
-    ("Task Completion - No MSU/PSK", "#f29400", "D", [70.0, 73.0, 76.0, 79.0, 78.5]),
-    ("Task Completion - No Routing", "#83a987", "^", [70.0, 73.8, 77.7, 81.5, 81.0]),
-]
+fig, ax = plt.subplots(figsize=(6.0, 3.8), dpi=200)
 
-fig, ax = plt.subplots(figsize=(12.5, 7.6), dpi=200)
+ax.plot([3], [81.0], marker="o", linestyle="", markersize=6,
+        color="#1f77b4", label="Diagnostic accuracy (not defined at K=0)")
+ax.annotate("81.0", xy=(3, 81.0), xytext=(6, -10),
+            textcoords="offset points", fontsize=8, color="#1f77b4")
 
-for name, color, marker, ys in SERIES:
-    # entire line is dashed because every segment touches interpolated points
-    ax.plot(X, ys, linestyle="--", linewidth=2.6, color=color,
-            marker="", zorder=2)
-    for x, y in zip(X, ys):
-        if x in MEASURED:
-            ax.plot(x, y, marker=marker, markersize=12, color=color,
-                    markerfacecolor=color, markeredgecolor=color,
-                    markeredgewidth=2.0, zorder=4)
-        else:
-            ax.plot(x, y, marker=marker, markersize=12, color=color,
-                    markerfacecolor="white", markeredgecolor=color,
-                    markeredgewidth=2.2, zorder=4)
-    # value labels (small offsets to reduce overlap)
-    for x, y in zip(X, ys):
-        ax.annotate(f"{y:.1f}%", (x, y), textcoords="offset points",
-                    xytext=(0, 9), ha="center", fontsize=11, color=color)
+ax.plot(K, full, marker="s", markersize=6, linewidth=1.8,
+        color="#d62728", label="Task completion (Full Model)")
+ax.plot(K, nomsu, marker="^", markersize=6, linewidth=1.8,
+        color="#2ca02c", label="Task completion (No MSU/PSK)")
+ax.plot(K, norout, marker="D", markersize=6, linewidth=1.8,
+        color="#ff7f0e", label="Task completion (No Routing)")
 
-ax.set_title("Multi-Metric Analysis of Sub-task Granularity",
-             fontsize=20, fontweight="bold", pad=12)
-ax.set_xlabel("Number of Atomic Sub-tasks", fontsize=17, fontweight="bold")
-ax.set_ylabel("Performance (%)", fontsize=17, fontweight="bold")
-ax.set_xticks(X)
-ax.set_xticklabels(["0 (No Decomp.)", "1", "2", "3", "4"], fontsize=14)
-ax.set_ylim(65, 95)
-ax.set_yticks(range(65, 96, 5))
-ax.tick_params(axis="y", labelsize=14)
-ax.grid(True, linestyle=":", linewidth=1.0, alpha=0.6)
-ax.axvspan(-0.25, 4.25, color="none")
-
-# vertical shaded band over the measured K=3 point column to reinforce
-ax.axvline(3, color="grey", linestyle=":", linewidth=1.0, alpha=0.5)
-
-series_handles = [
-    Line2D([], [], color=c, marker=m, linestyle="--", linewidth=2.6,
-           markersize=11, label=n)
-    for n, c, m, _ in SERIES
-]
-measured_handle = Line2D(
-    [], [], color="black", marker="o", linestyle="None", markersize=12,
-    markerfacecolor="black", markeredgecolor="black",
-    label="Measured point (K=0, 3)")
-interp_handle = Line2D(
-    [], [], color="black", marker="o", linestyle="--", linewidth=2.0,
-    markersize=12, markerfacecolor="white", markeredgecolor="black",
-    markeredgewidth=2.0, label="Interpolated point (K=1, 2, 4)")
-
-ax.legend(handles=series_handles + [measured_handle, interp_handle],
-          loc="lower right", fontsize=12.5, framealpha=0.95)
-
-plt.tight_layout()
-plt.savefig("Figure_3.pdf", format="pdf", bbox_inches="tight")
-plt.savefig("Figure_3_preview.png", format="png", dpi=150, bbox_inches="tight")
-print("saved Figure_3.pdf")
+ax.set_xticks([0, 3])
+ax.set_xticklabels(["$K=0$\n(No Decomp.)", "$K=3$"])
+ax.set_ylim(60, 95)
+ax.set_ylabel("Performance (%)")
+ax.set_xlabel("Number of subtasks $K$ (measured configurations)")
+ax.grid(True, linestyle="--", alpha=0.4)
+ax.legend(fontsize=7.5, framealpha=0.9)
+fig.tight_layout()
+out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Figure_3.pdf")
+fig.savefig(out)
+print("saved:", out)
