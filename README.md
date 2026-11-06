@@ -77,7 +77,7 @@ ASK-StreamDiag/
 │
 ├── generate_results.py                    # Aggregates recorded runs into result CSVs/TXTs
 │
-├── gemini25_flash_rerun/                  # Clean re-implementation (Gemini-2.5-flash target)
+├── gemini25_flash_rerun_code/                  # Clean re-implementation (Gemini-2.5-flash target)
 │   ├── common/
 │   │   ├── gemini_client.py               # Gemini HTTP client (retry / timeout / proxy)
 │   │   ├── openai_clients.py              # GPT-4 judge + GPT-3.5 dispatcher clients
@@ -136,7 +136,7 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
-Tested with Python 3.10–3.14. The core requirements are `requests`, `openai`, `numpy`, `pandas`, `pyarrow`, `scikit-learn`, `matplotlib`, `seaborn`. The original `05 MAM-StreamICL.py` additionally needs `faiss-cpu` and `sentence-transformers` (listed, commented out, in `requirements.txt`; the `gemini25_flash_rerun/` re-implementation uses SequenceMatcher retrieval and does not need them).
+Tested with Python 3.10–3.14. The core requirements are `requests`, `openai`, `numpy`, `pandas`, `pyarrow`, `scikit-learn`, `matplotlib`, `seaborn`. The original `05 MAM-StreamICL.py` additionally needs `faiss-cpu` and `sentence-transformers` (listed, commented out, in `requirements.txt`; the `gemini25_flash_rerun_code/` re-implementation uses SequenceMatcher retrieval and does not need them).
 
 ---
 
@@ -215,7 +215,7 @@ python "Ablation and Analysis experiment.py"
 
 ## Scoring metrics
 
-The metrics follow paper Section 5.6 and are implemented in `gemini25_flash_rerun/common/scorer.py`.
+The metrics follow paper Section 5.6 and are implemented in `gemini25_flash_rerun_code/common/scorer.py`.
 
 - **ACC (accuracy).** Answers are normalized before comparison:
   - *code* (`DS-1000`): fenced code block extraction (falling back to `SELECT`/`def` heuristics), uppercasing, whitespace collapsing; correct when `SequenceMatcher(pred, gold).ratio() > 0.7`.
@@ -233,7 +233,7 @@ The metrics follow paper Section 5.6 and are implemented in `gemini25_flash_reru
 | Paper element | Source script / file |
 |---|---|
 | Table 6 (main results, 8 methods x 6 models x 3 datasets) | `run_all_gemini25.py` (Gemini target) / root scripts (other models); `results/main_experiment_results.csv`; `generate_results.py` aggregates recorded runs |
-| Table 7 (budget-matched controls) | `gemini25_flash_rerun/run_budget_controls.py`; `results/table7_gemini25_flash.csv` |
+| Table 7 (budget-matched controls) | `gemini25_flash_rerun_code/run_budget_controls.py`; `results/table7_gemini25_flash.csv` |
 | Tables 8–9 (raw pre-repair ACC / EM) | Zero-Shot rows of the same Table 6 runs (values identical to the Zero-Shot rows) |
 | Ablation tables (no-decomposition / no-classification / no-routing; granularity K) | `Ablation and Analysis experiment.py`; `results/ablation_experiment_results.csv` |
 | Threshold sweep (`tau_low`/`tau_high`), judge rounds, token length, cross-domain | `Ablation and Analysis experiment.py`; `results/analysis_experiment_results.csv` |
@@ -277,7 +277,7 @@ Figures 3 and 4 plot the raw pre-repair Zero-Shot values; intermediate K points 
 
 1. **Data path.** `common/data_loader.py` and the root scripts currently contain an absolute `DATA_BASE`/`DATASET_PATH` constant pointing at the local data directory. Change it to your own `data/` folder before running.
 2. **Sample counts.** The paper reports 1,000 / 1,200 / 800 evaluated instances for DS-1000 / DDXPlus / ToolBench; the public parquet releases contain 1,000 / 1,764 / 750 rows respectively. The loader caps each dataset with `--limit` (DDXPlus is truncated to the first 1,000; all 750 ToolBench rows are used). Set the sample size explicitly when reproducing a specific table.
-3. **MAM retrieval.** The original MAM-StreamICL uses FAISS + `BAAI/bge-base-en-v1.5`; the `gemini25_flash_rerun/` re-implementation uses SequenceMatcher string-similarity retrieval (top-k = 16, only correct exemplars stored). Core logic is identical; the retriever is the only difference.
+3. **MAM retrieval.** The original MAM-StreamICL uses FAISS + `BAAI/bge-base-en-v1.5`; the `gemini25_flash_rerun_code/` re-implementation uses SequenceMatcher string-similarity retrieval (top-k = 16, only correct exemplars stored). Core logic is identical; the retriever is the only difference.
 4. **Dry-run values are not paper values.** `test_dry_run.py` uses mock annotations and never contacts an API; its output must not be used for reported results.
 5. **No hard-coded keys.** Every script reads credentials from environment variables; no real network request is made unless the corresponding key is set.
 6. **Budget controls.** The `Binary+GPT4-Routing` and `Oracle-Routing` rows of Table 7 are formula-derived (`routing = zs + (1-zs) * 0.734`, `oracle = zs + (1-zs) * 0.815`); `Binary+GPT4-Judge` is a real control run rebuilt from the paper's description.
